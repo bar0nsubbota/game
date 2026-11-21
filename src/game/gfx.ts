@@ -304,6 +304,7 @@ function radial(size: number, stops: [number, string][]): HTMLCanvasElement {
 export interface Gfx {
   floor: HTMLCanvasElement[][];
   floorBig: HTMLCanvasElement[];
+  tilesVer: number;
   face: HTMLCanvasElement[];
   top: HTMLCanvasElement[];
   aoN: HTMLCanvasElement; aoS: HTMLCanvasElement; aoW: HTMLCanvasElement; aoE: HTMLCanvasElement;
@@ -352,6 +353,7 @@ export function getGfx(): Gfx {
   G = {
     floor,
     floorBig,
+    tilesVer: 0,
     face: [makeWallFace(0), makeWallFace(1), makeWallFace(2)],
     top: [makeWallTop(0), makeWallTop(1), makeWallTop(2)],
     aoN: grad(8, 32, 0, 0, 0, 32, 0.7),
@@ -443,6 +445,7 @@ export function getGfx(): Gfx {
       gt.fillStyle = 'rgba(255,255,255,0.04)';
       gt.fillRect(0, 0, S, S);
     }
+    G.tilesVer++;
   });
   return G;
 }

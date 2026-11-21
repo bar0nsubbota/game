@@ -179,7 +179,7 @@ export class Game {
     const mobile = touch || Math.min(w, h) < 640;
     this.isMobile = mobile;
     // Оптимизация под мобильные GPU: 1.15x DPR даёт чёткую картинку при -57% нагрузки на пиксели
-    this.dpr = this.lowPerf ? 1 : Math.min(window.devicePixelRatio || 1, mobile ? 1.15 : 2);
+    this.dpr = this.lowPerf ? 0.85 : Math.min(window.devicePixelRatio || 1, mobile ? 1.15 : 2);
     this.W = w; this.H = h;
     this.canvas.width = Math.round(w * this.dpr);
     this.canvas.height = Math.round(h * this.dpr);
@@ -191,7 +191,7 @@ export class Game {
     if (!this.paused && !this.over) this.update(raw);
     else if (this.over) { this.updateFx(raw); this.updateCam(raw); }
     this.hudT += raw;
-    if (this.hudT > (this.isMobile ? 0.1 : 0.05)) { this.hudT = 0; this.emitHud(); }
+    if (this.hudT > (this.lowPerf ? 0.15 : this.isMobile ? 0.1 : 0.05)) { this.hudT = 0; this.emitHud(); }
     renderGame(this, ts / 1000);
     this.raf = requestAnimationFrame(this.frame);
   };

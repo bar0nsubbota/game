@@ -24,13 +24,81 @@ let mmCacheCtx: CanvasRenderingContext2D | null = null;
 let mmCacheT = -99;
 let mmCacheSz = 0;
 
+// Чанк-кэш статичного пола и стен (12×12 тайлов = 576×576px): 2–4 drawImage за кадр вместо 250!
+const CHUNK = 12;
+const chunkStore = new WeakMap<object, { ver: number; low: boolean; map: Map<number, HTMLCanvasElement> }>();
+
+function getChunk(g: Game, gfx: ReturnType<typeof getGfx>, cx: number, cy: number): HTMLCanvasElement {
+  const map = g.map;
+  let entry = chunkStore.get(map);
+  if (!entry || entry.ver !== gfx.tilesVer || entry.low !== g.lowPerf) {
+    entry = { ver: gfx.tilesVer, low: g.lowPerf, map: new Map() };
+    chunkStore.set(map, entry);
+  }
+  const key = cy * 64 + cx;
+  let cv = entry.map.get(key);
+  if (cv) return cv;
+
+  cv = document.createElement('canvas');
+  cv.width = CHUNK * TS;
+  cv.height = CHUNK * TS;
+  const c = cv.getContext('2d')!;
+  c.imageSmoothingEnabled = !g.lowPerf;
+
+  const tx0 = cx * CHUNK;
+  const ty0 = cy * CHUNK;
+  const tx1 = Math.min(MAP_W, tx0 + CHUNK);
+  const ty1 = Math.min(MAP_H, ty0 + CHUNK);
+
+  for (let ty = ty0; ty < ty1; ty++) {
+    for (let tx = tx0; tx < tx1; tx++) {
+      const i = ty * MAP_W + tx;
+      const k = map.kind[i];
+      if (!k) continue;
+      const px = (tx - tx0) * TS;
+      const py = (ty - ty0) * TS;
+      const v = map.variant[i];
+      const m = map.mask[i];
+      if (k === 1) {
+        const fl = gfx.floorBig[map.theme[i]] || gfx.floorBig[0];
+        const span = 8;
+        const sw = fl.width / span;
+        c.drawImage(fl, (tx % span) * sw, (ty % span) * sw, sw, sw, px, py, TS + 1, TS + 1);
+        if (m && !g.lowPerf) {
+          if (m & 1) c.drawImage(gfx.aoN, px, py, TS + 1, TS * 0.6);
+          if (m & 2) c.drawImage(gfx.aoE, px + TS * 0.7, py, TS * 0.3 + 1, TS + 1);
+          if (m & 4) c.drawImage(gfx.aoS, px, py + TS * 0.78, TS + 1, TS * 0.22 + 1);
+          if (m & 8) c.drawImage(gfx.aoW, px, py, TS * 0.3, TS + 1);
+        }
+      } else if (k === 2) {
+        c.drawImage(gfx.face[v % 3], px, py, TS + 1, TS + 1);
+      } else {
+        c.drawImage(gfx.top[v % 3], px, py, TS + 1, TS + 1);
+        if (m) {
+          c.fillStyle = '#3a3748';
+          if (m & 1) c.fillRect(px, py, TS + 1, 3);
+          if (m & 2) c.fillRect(px + TS - 3, py, 3, TS + 1);
+          if (m & 8) c.fillRect(px, py, 3, TS + 1);
+        }
+      }
+    }
+  }
+  // Ограничиваем размер кэша чанков для экономии памяти на телефоне
+  if (entry.map.size > 48) {
+    const firstKey = entry.map.keys().next().value;
+    if (firstKey !== undefined) entry.map.delete(firstKey);
+  }
+  entry.map.set(key, cv);
+  return cv;
+}
+
 export function minimapSize(w: number, h: number) {
   return Math.max(92, Math.min(150, Math.min(w, h) * 0.28));
 }
 
 export function renderGame(g: Game, now: number) {
   const gfx = getGfx();
-  const ctx = g.ctx, W = g.W, H = g.H, dpr = g.dpr, zoom = g.zoom, p = g.p, map = g.map;
+  const ctx = g.ctx, W = g.W, H = g.H, dpr = g.dpr, zoom = g.zoom, p = g.p;
   const sh = g.cam.shake;
   const cx = g.cam.x + (Math.random() - 0.5) * sh, cy = g.cam.y + (Math.random() - 0.5) * sh;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -45,36 +113,16 @@ export function renderGame(g: Game, now: number) {
   const y0 = Math.max(0, Math.floor(top / TS) - 1), y1 = Math.min(MAP_H - 1, Math.floor(bottom / TS) + 2);
   ctx.imageSmoothingEnabled = true;
 
-  // ---- тайлы
-  for (let ty = y0; ty <= y1; ty++) {
-    for (let tx = x0; tx <= x1; tx++) {
-      const i = ty * MAP_W + tx, k = map.kind[i];
-      if (!k) continue;
-      const px = tx * TS, py = ty * TS, v = map.variant[i], m = map.mask[i];
-      if (k === 1) {
-        const fl = gfx.floorBig[map.theme[i]] || gfx.floorBig[0];
-        const span = 8;
-        const sw = fl.width / span;
-        ctx.drawImage(fl, (tx % span) * sw, (ty % span) * sw, sw, sw, px, py, TS + 1, TS + 1);
-        if (m && !g.lowPerf) {
-          if (m & 1) ctx.drawImage(gfx.aoN, px, py, TS + 1, TS * 0.6);
-          if (m & 2) ctx.drawImage(gfx.aoE, px + TS * 0.7, py, TS * 0.3 + 1, TS + 1);
-          if (m & 4) ctx.drawImage(gfx.aoS, px, py + TS * 0.78, TS + 1, TS * 0.22 + 1);
-          if (m & 8) ctx.drawImage(gfx.aoW, px, py, TS * 0.3, TS + 1);
-        }
-      } else if (k === 2) {
-        ctx.drawImage(gfx.face[v % 3], px, py, TS + 1, TS + 1);
-      } else {
-        ctx.drawImage(gfx.top[v % 3], px, py, TS + 1, TS + 1);
-        if (m) {
-          ctx.fillStyle = '#3a3748';
-          if (m & 1) ctx.fillRect(px, py, TS + 1, 3);
-          if (m & 2) ctx.fillRect(px + TS - 3, py, 3, TS + 1);
-          if (m & 8) ctx.fillRect(px, py, 3, TS + 1);
-        }
-      }
+  // ---- тайлы (запечённые чанки 12×12: 2–4 drawImage вместо 250 за кадр!)
+  const cx0 = Math.floor(x0 / CHUNK), cx1 = Math.floor(x1 / CHUNK);
+  const cy0 = Math.floor(y0 / CHUNK), cy1 = Math.floor(y1 / CHUNK);
+  ctx.imageSmoothingEnabled = !g.lowPerf;
+  for (let cyi = cy0; cyi <= cy1; cyi++) {
+    for (let cxi = cx0; cxi <= cx1; cxi++) {
+      ctx.drawImage(getChunk(g, gfx, cxi, cyi), cxi * CHUNK * TS, cyi * CHUNK * TS);
     }
   }
+  ctx.imageSmoothingEnabled = true;
   // факелы на стенах
   for (const t of g.world.torches) {
     if (t.x < left - 40 || t.x > right + 40 || t.y < top - 60 || t.y > bottom + 40) continue;
