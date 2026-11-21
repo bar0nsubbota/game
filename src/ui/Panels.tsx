@@ -208,8 +208,8 @@ export function PausePanel({
 }) {
   return (
     <Modal title="Пауза" onClose={onResume}>
-      <div className="mx-auto flex max-w-xs flex-col gap-2.5">
-        <button onClick={onResume} className="btn-gold flex items-center justify-center gap-2 rounded-lg py-3 font-bold"><Play size={18} />Продолжить</button>
+      <div className="mx-auto flex max-w-xs flex-col gap-2">
+        <button onClick={onResume} className="btn-gold flex items-center justify-center gap-2 rounded-lg py-2.5 font-bold"><Play size={18} />Продолжить</button>
         <div className="flex items-center justify-between gap-3 rounded-lg border border-amber-800/50 bg-black/45 px-3.5 py-2.5">
           <div className="flex items-center gap-2.5">
             <Smartphone size={18} className={cn('text-amber-300 transition-transform duration-200', landscape && 'rotate-90')} />
@@ -237,9 +237,9 @@ export function PausePanel({
             />
           </button>
         </div>
-        <button onClick={onHelp} className="btn-dark flex items-center justify-center gap-2 rounded-lg py-3 font-semibold">Управление и советы</button>
-        <button onClick={onMute} className="btn-dark flex items-center justify-center gap-2 rounded-lg py-3 font-semibold">{muted ? <VolumeX size={18} /> : <Volume2 size={18} />}{muted ? 'Включить звук' : 'Выключить звук'}</button>
-        <button onClick={onQuit} className="btn-dark flex items-center justify-center gap-2 rounded-lg py-3 font-semibold text-red-300"><Home size={18} />Покинуть забег</button>
+        <button onClick={onHelp} className="btn-dark flex items-center justify-center gap-2 rounded-lg py-2.5 font-semibold">Управление и советы</button>
+        <button onClick={onMute} className="btn-dark flex items-center justify-center gap-2 rounded-lg py-2.5 font-semibold">{muted ? <VolumeX size={18} /> : <Volume2 size={18} />}{muted ? 'Включить звук' : 'Выключить звук'}</button>
+        <button onClick={onQuit} className="btn-dark flex items-center justify-center gap-2 rounded-lg py-2.5 font-semibold text-red-300"><Home size={18} />Покинуть забег</button>
       </div>
     </Modal>
   );
