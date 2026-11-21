@@ -1,0 +1,25 @@
+{
+  "name": "NOCTIS — Клинки Бездны",
+  "short_name": "NOCTIS",
+  "description": "Тёмный экшен-рогалик с чиби-ассасином и двумя клинками",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0b0914",
+  "theme_color": "#141124",
+  "icons": [
+    {
+      "src": "./icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
