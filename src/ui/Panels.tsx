@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Coins, Crown, FlaskConical, Gem, Home, KeyRound, Play, RotateCcw, Skull, Smartphone, Sparkles, Store, Swords, Volume2, VolumeX } from 'lucide-react';
+import { Coins, Crown, FlaskConical, Gem, Home, KeyRound, Play, RotateCcw, Skull, Smartphone, Sparkles, Store, Swords, Volume2, VolumeX, Zap } from 'lucide-react';
 import type { Game } from '../game/engine';
 import type { HudState, RunSummary } from '../game/types';
 import { ATTRS, MAX_POTIONS, RARITY, SKILLS, WEAPONS, fmtStat, type AttrKey, type StatKey, type WeaponDef } from '../game/data';
@@ -196,11 +196,13 @@ export function ShopPanel({ game, hud, onClose }: { game: Game; hud: HudState; o
 }
 
 export function PausePanel({
-  muted, landscape, onToggleLandscape, onResume, onHelp, onMute, onQuit,
+  muted, landscape, onToggleLandscape, lowPerf, onToggleLowPerf, onResume, onHelp, onMute, onQuit,
 }: {
   muted: boolean;
   landscape: boolean;
   onToggleLandscape: () => void;
+  lowPerf: boolean;
+  onToggleLowPerf: () => void;
   onResume: () => void;
   onHelp: () => void;
   onMute: () => void;
@@ -233,6 +235,33 @@ export function PausePanel({
               className={cn(
                 'inline-block h-5 w-5 rounded-full bg-white shadow transition-transform duration-200',
                 landscape ? 'translate-x-6' : 'translate-x-1',
+              )}
+            />
+          </button>
+        </div>
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-emerald-700/50 bg-black/45 px-3.5 py-2">
+          <div className="flex items-center gap-2.5">
+            <Zap size={18} className={cn('transition-colors', lowPerf ? 'text-emerald-400' : 'text-zinc-400')} />
+            <div className="text-left">
+              <div className="text-sm font-semibold text-amber-100">Режим 60 FPS (слабые тел.)</div>
+              <div className="text-[11px] text-zinc-400">Откл. лишний свет и тени</div>
+            </div>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={lowPerf}
+            aria-label="Режим 60 FPS для слабых телефонов"
+            onClick={onToggleLowPerf}
+            className={cn(
+              'relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full border transition-colors duration-200',
+              lowPerf ? 'border-emerald-300 bg-emerald-500/85' : 'border-zinc-600 bg-zinc-800',
+            )}
+          >
+            <span
+              className={cn(
+                'inline-block h-5 w-5 rounded-full bg-white shadow transition-transform duration-200',
+                lowPerf ? 'translate-x-6' : 'translate-x-1',
               )}
             />
           </button>

@@ -46,6 +46,9 @@ export function GameScreen({ meta, onRunEnd, onMenu, onRestart }: Props) {
   const [landscape, setLandscape] = useState(() => {
     try { return localStorage.getItem('noctis_landscape') === '1'; } catch { return false; }
   });
+  const [lowPerf, setLowPerf] = useState(() => {
+    try { return localStorage.getItem('noctis_low_perf') === '1'; } catch { return false; }
+  });
   const win = useWindowSize();
   const rot90 = landscape && win.h > win.w;
   const viewSize = rot90 ? { w: win.h, h: win.w } : { w: win.w, h: win.h };
@@ -103,6 +106,7 @@ export function GameScreen({ meta, onRunEnd, onMenu, onRestart }: Props) {
       Math.floor(Math.random() * 1e9),
     );
     if (window.matchMedia('(pointer: coarse)').matches) g.input.mode = 'touch';
+    g.lowPerf = lowPerf;
     gameRef.current = g;
     g.attach();
     g.emitHud();
@@ -145,9 +149,20 @@ export function GameScreen({ meta, onRunEnd, onMenu, onRestart }: Props) {
   useEffect(() => {
     if (gameRef.current) {
       gameRef.current.rotated = rot90;
+      gameRef.current.lowPerf = lowPerf;
       requestAnimationFrame(() => gameRef.current?.resize());
     }
-  }, [rot90, win.w, win.h]);
+  }, [rot90, lowPerf, win.w, win.h]);
+
+  const toggleLowPerf = () => {
+    const next = !lowPerf;
+    setLowPerf(next);
+    try { localStorage.setItem('noctis_low_perf', next ? '1' : '0'); } catch { /* ignore */ }
+    if (gameRef.current) {
+      gameRef.current.lowPerf = next;
+      gameRef.current.resize();
+    }
+  };
 
   const toggleLandscape = () => {
     const next = !landscape;
@@ -205,7 +220,7 @@ export function GameScreen({ meta, onRunEnd, onMenu, onRestart }: Props) {
       )}
       {panel === 'shop' && hud && g && <ShopPanel game={g} hud={hud} onClose={() => setPanel(null)} />}
       {panel === 'hero' && hud && g && <HeroPanel game={g} hud={hud} tab={heroTab} setTab={setHeroTab} onClose={() => setPanel(null)} />}
-      {panel === 'pause' && <PausePanel muted={muted} landscape={landscape} onToggleLandscape={toggleLandscape} onResume={() => setPanel(null)} onHelp={() => setPanel('help')} onMute={toggleMute} onQuit={() => { if (g) award(g.summary()); onMenu(); }} />}
+      {panel === 'pause' && <PausePanel muted={muted} landscape={landscape} onToggleLandscape={toggleLandscape} lowPerf={lowPerf} onToggleLowPerf={toggleLowPerf} onResume={() => setPanel(null)} onHelp={() => setPanel('help')} onMute={toggleMute} onQuit={() => { if (g) award(g.summary()); onMenu(); }} />}
       {panel === 'help' && <HelpPanel onClose={() => setPanel('pause')} />}
       {panel === 'dead' && summary && <EndPanel kind="dead" summary={summary} onRestart={onRestart} onMenu={onMenu} />}
       {panel === 'victory' && summary && <EndPanel kind="victory" summary={summary} onRestart={onRestart} onMenu={onMenu} onContinue={() => setPanel(null)} />}

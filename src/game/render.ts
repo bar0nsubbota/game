@@ -56,7 +56,7 @@ export function renderGame(g: Game, now: number) {
         const span = 8;
         const sw = fl.width / span;
         ctx.drawImage(fl, (tx % span) * sw, (ty % span) * sw, sw, sw, px, py, TS + 1, TS + 1);
-        if (m) {
+        if (m && !g.lowPerf) {
           if (m & 1) ctx.drawImage(gfx.aoN, px, py, TS + 1, TS * 0.6);
           if (m & 2) ctx.drawImage(gfx.aoE, px + TS * 0.7, py, TS * 0.3 + 1, TS + 1);
           if (m & 4) ctx.drawImage(gfx.aoS, px, py + TS * 0.78, TS + 1, TS * 0.22 + 1);
@@ -85,17 +85,23 @@ export function renderGame(g: Game, now: number) {
     ctx.fillStyle = '#17151d';
     ctx.beginPath(); ctx.moveTo(t.x - 5, t.y - 7); ctx.lineTo(t.x + 5, t.y - 7); ctx.lineTo(t.x + 3, t.y - 1); ctx.lineTo(t.x - 3, t.y - 1); ctx.closePath(); ctx.fill();
     ctx.strokeStyle = '#4a4552'; ctx.lineWidth = 1; ctx.stroke();
-    // тёплое свечение у основания пламени
-    ctx.globalCompositeOperation = 'lighter';
-    ctx.globalAlpha = 0.5 * fl;
-    ctx.drawImage(gfx.glow('#ff9a3a'), t.x - 26, t.y - 28, 52, 52);
-    ctx.globalAlpha = 1;
-    ctx.globalCompositeOperation = 'source-over';
-    S.flame(ctx, t.x, t.y - 6, 4.6 * fl, 16 * fl, now, t.seed, '#ff8a22', '#ffe27a');
+    if (g.lowPerf) {
+      ctx.fillStyle = '#ff9a2e';
+      ctx.beginPath(); ctx.arc(t.x, t.y - 10, 4.2 * fl, 0, TAU); ctx.fill();
+      ctx.fillStyle = '#fff0a0';
+      ctx.beginPath(); ctx.arc(t.x, t.y - 10, 2.0 * fl, 0, TAU); ctx.fill();
+    } else {
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = 0.5 * fl;
+      ctx.drawImage(gfx.glow('#ff9a3a'), t.x - 26, t.y - 28, 52, 52);
+      ctx.globalAlpha = 1;
+      ctx.globalCompositeOperation = 'source-over';
+      S.flame(ctx, t.x, t.y - 6, 4.6 * fl, 16 * fl, now, t.seed, '#ff8a22', '#ffe27a');
+    }
   }
   // ---- декали
   const inView = (x: number, y: number, m: number) => x > left - m && x < right + m && y > top - m && y < bottom + m;
-  for (const d of g.stains) if (inView(d.x, d.y, 200)) S.drawDecal(ctx, d, now);
+  if (!g.lowPerf) for (const d of g.stains) if (inView(d.x, d.y, 200)) S.drawDecal(ctx, d, now);
   // ---- реквизит на полу
   for (const pr of g.props) if (S.isFloorProp(pr.kind) && inView(pr.x, pr.y, 40)) S.drawProp(ctx, pr, now);
   // ---- зоны (телеграфы)
@@ -216,6 +222,7 @@ export function renderGame(g: Game, now: number) {
   ctx.globalAlpha = 1;
   ctx.globalCompositeOperation = 'source-over';
 
+  if (!g.lowPerf) {
   // ---- освещение (0.25× на мобильных = в 4 раза меньше пикселей при той же мягкости)
   const lScale = g.isMobile ? 0.25 : 0.5;
   const lw = Math.max(1, Math.ceil(W * lScale)), lh = Math.max(1, Math.ceil(H * lScale));
@@ -282,6 +289,7 @@ export function renderGame(g: Game, now: number) {
   for (const gl of glows) {
     ctx.globalAlpha = gl.a;
     ctx.drawImage(gfx.glow(gl.c), gl.x - gl.r, gl.y - gl.r, gl.r * 2, gl.r * 2);
+  }
   }
   ctx.globalAlpha = 1;
   ctx.globalCompositeOperation = 'source-over';
@@ -385,7 +393,7 @@ export function renderGame(g: Game, now: number) {
     ctx.strokeText(t.text, 0, 0);
 
     // Глянцевая заливка (на мобилке — быстрый цвет без аллокации градиентов каждый кадр)
-    if (g.isMobile) {
+    if (g.isMobile || g.lowPerf) {
       ctx.fillStyle = isCrit ? '#ffd84a' : (t.col === '#fff' || t.col === '#ffffff' || t.col === '#eee') ? '#f8fafc' : t.col;
     } else {
       const grad = ctx.createLinearGradient(0, -sz * 0.55, 0, sz * 0.5);
@@ -429,7 +437,7 @@ export function renderGame(g: Game, now: number) {
 
   // ---- экранные эффекты
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.drawImage(gfx.vignette, 0, 0, W, H);
+  if (!g.lowPerf) ctx.drawImage(gfx.vignette, 0, 0, W, H);
   if (p.hurt > 0 || (p.hp / g.s.maxHp < 0.3 && !g.over)) {
     const a = Math.max(p.hurt * 1.4, p.hp / g.s.maxHp < 0.3 ? 0.18 + Math.sin(now * 5) * 0.08 : 0);
     const gr = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.25, W / 2, H / 2, Math.max(W, H) * 0.7);
@@ -788,7 +796,7 @@ function drawMinimap(g: Game, ctx: CanvasRenderingContext2D, W: number, H: numbe
   if (mmCache.width !== pxS || mmCache.height !== pxS || mmCacheSz !== S) {
     mmCache.width = pxS; mmCache.height = pxS; mmCacheSz = S; mmCacheT = -99;
   }
-  const interval = g.isMobile ? 0.18 : 0.08;
+  const interval = g.lowPerf ? 0.35 : g.isMobile ? 0.18 : 0.08;
   if (now - mmCacheT >= interval || now < mmCacheT) {
     mmCacheT = now;
     const mc = mmCacheCtx!;

@@ -82,6 +82,7 @@ export class Game {
   showMap = false;
   rotated = false;
   isMobile = false;
+  lowPerf = false;
   boss: Enemy | null = null;
   bossActive = false;
   sealsMask = 0;
@@ -101,7 +102,7 @@ export class Game {
 
   constructor(canvas: HTMLCanvasElement, cb: GameCallbacks, meta: Meta, seed: number) {
     this.canvas = canvas;
-    this.ctx = canvas.getContext('2d')!;
+    this.ctx = canvas.getContext('2d', { alpha: false })!;
     this.cb = cb;
     this.meta = meta;
     this.world = buildWorld(seed);
@@ -178,7 +179,7 @@ export class Game {
     const mobile = touch || Math.min(w, h) < 640;
     this.isMobile = mobile;
     // Оптимизация под мобильные GPU: 1.15x DPR даёт чёткую картинку при -57% нагрузки на пиксели
-    this.dpr = Math.min(window.devicePixelRatio || 1, mobile ? 1.15 : 2);
+    this.dpr = this.lowPerf ? 1 : Math.min(window.devicePixelRatio || 1, mobile ? 1.15 : 2);
     this.W = w; this.H = h;
     this.canvas.width = Math.round(w * this.dpr);
     this.canvas.height = Math.round(h * this.dpr);
@@ -1640,12 +1641,13 @@ export class Game {
   // ------------------------------------------------------------ визуальные эффекты
   shake(a: number) { this.cam.shake = Math.min(18, Math.max(this.cam.shake, a)); }
   part(x: number, y: number, vx: number, vy: number, life: number, size: number, col: string, grav = 0, kind: 0 | 1 | 2 | 3 | 4 = 0, drag = 0) {
-    if (this.parts.length > (this.isMobile ? 55 : 160)) return;
+    if (this.parts.length > (this.lowPerf ? 24 : this.isMobile ? 55 : 160)) return;
     if (this.parts.length > 560) return;
     this.parts.push({ x, y, vx, vy, life, max: life, size, col, grav, kind, drag, spin: (rand() - 0.5) * 2, rot: rand() * 6.28 });
   }
   burst(x: number, y: number, n: number, col: string, speed: number, life: number, size: number, grav = 0) {
-    if (this.isMobile) n = Math.max(2, Math.ceil(n * 0.5));
+    if (this.lowPerf) n = Math.max(1, Math.ceil(n * 0.35));
+    else if (this.isMobile) n = Math.max(2, Math.ceil(n * 0.5));
     for (let i = 0; i < n; i++) {
       const a = rand() * 6.28, sp = rr(0.3, 1) * speed;
       this.part(x, y, Math.cos(a) * sp, Math.sin(a) * sp * 0.8, life * rr(0.6, 1.2), size * rr(0.6, 1.2), col, grav, rand() < 0.5 ? 0 : 1, 0.05);
