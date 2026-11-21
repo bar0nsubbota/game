@@ -81,6 +81,7 @@ export class Game {
   mmDirty = true; exploreT = 0;
   showMap = false;
   rotated = false;
+  isMobile = false;
   boss: Enemy | null = null;
   bossActive = false;
   sealsMask = 0;
@@ -174,11 +175,13 @@ export class Game {
   resize = () => {
     const w = this.canvas.clientWidth || window.innerWidth, h = this.canvas.clientHeight || window.innerHeight;
     const touch = window.matchMedia('(pointer: coarse)').matches;
-    this.dpr = Math.min(window.devicePixelRatio || 1, touch ? 1.75 : 2);
+    const mobile = touch || Math.min(w, h) < 640;
+    this.isMobile = mobile;
+    // Оптимизация под мобильные GPU: 1.15x DPR даёт чёткую картинку при -57% нагрузки на пиксели
+    this.dpr = Math.min(window.devicePixelRatio || 1, mobile ? 1.15 : 2);
     this.W = w; this.H = h;
     this.canvas.width = Math.round(w * this.dpr);
     this.canvas.height = Math.round(h * this.dpr);
-    const mobile = touch || w < 640;
     this.zoom = mobile
       ? Math.max(1.12, Math.min(1.48, Math.min(w, h) / 340))
       : Math.max(0.85, Math.min(1.5, Math.min(w, h) / 560));
@@ -189,7 +192,7 @@ export class Game {
     if (!this.paused && !this.over) this.update(raw);
     else if (this.over) { this.updateFx(raw); this.updateCam(raw); }
     this.hudT += raw;
-    if (this.hudT > 0.05) { this.hudT = 0; this.emitHud(); }
+    if (this.hudT > (this.isMobile ? 0.1 : 0.05)) { this.hudT = 0; this.emitHud(); }
     renderGame(this, ts / 1000);
     this.raf = requestAnimationFrame(this.frame);
   };
@@ -1639,10 +1642,12 @@ export class Game {
   // ------------------------------------------------------------ визуальные эффекты
   shake(a: number) { this.cam.shake = Math.min(18, Math.max(this.cam.shake, a)); }
   part(x: number, y: number, vx: number, vy: number, life: number, size: number, col: string, grav = 0, kind: 0 | 1 | 2 | 3 | 4 = 0, drag = 0) {
+    if (this.parts.length > (this.isMobile ? 55 : 160)) return;
     if (this.parts.length > 560) return;
     this.parts.push({ x, y, vx, vy, life, max: life, size, col, grav, kind, drag, spin: (rand() - 0.5) * 2, rot: rand() * 6.28 });
   }
   burst(x: number, y: number, n: number, col: string, speed: number, life: number, size: number, grav = 0) {
+    if (this.isMobile) n = Math.max(2, Math.ceil(n * 0.5));
     for (let i = 0; i < n; i++) {
       const a = rand() * 6.28, sp = rr(0.3, 1) * speed;
       this.part(x, y, Math.cos(a) * sp, Math.sin(a) * sp * 0.8, life * rr(0.6, 1.2), size * rr(0.6, 1.2), col, grav, rand() < 0.5 ? 0 : 1, 0.05);

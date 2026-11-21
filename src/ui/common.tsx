@@ -66,7 +66,7 @@ export function Modal({ title, onClose, children, wide, icon }: { title: string;
 
   return (
     <div
-      className="absolute inset-0 z-40 flex items-center justify-center bg-black/75 p-2 backdrop-blur-[2px] sm:p-4"
+      className="absolute inset-0 z-40 flex items-center justify-center bg-black/75 p-2 sm:p-4"
       onClick={onClose}
     >
       <div

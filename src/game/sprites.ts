@@ -1520,7 +1520,7 @@ export function drawProp(c: C, p: Prop, t: number) {
           c.drawImage(getGfxGlow('#ff2e54'), -34, -53, 68, 68); c.restore();
         }
         c.save();
-        if (p.state > 0) c.filter = 'grayscale(0.85) brightness(0.65)';
+        if (p.state > 0) c.globalAlpha = 0.48;
         c.drawImage(wb.shrine, -31, -55, 62, 62);
         c.restore();
       } else shrine(c, p, t);

@@ -248,7 +248,7 @@ export function PausePanel({
 export function EndPanel({ kind, summary, onRestart, onMenu, onContinue }: { kind: 'dead' | 'victory'; summary: RunSummary; onRestart: () => void; onMenu: () => void; onContinue?: () => void }) {
   const win = kind === 'victory';
   return (
-    <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/80 p-3 backdrop-blur-sm">
+    <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/80 p-3 ">
       <div className="panel-ornate fade-in w-full max-w-md rounded-xl p-5 text-center">
         {win ? <Crown className="mx-auto mb-1 text-amber-400" size={42} /> : <Skull className="mx-auto mb-1 text-red-500" size={42} />}
         <h2 className={cn('font-display text-3xl font-black tracking-wider', win ? 'gold-text' : 'text-red-500')}>{win ? 'ПОБЕДА' : 'ВЫ ПАЛИ'}</h2>
