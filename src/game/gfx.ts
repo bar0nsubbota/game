@@ -1,5 +1,6 @@
 import { TS } from './data';
 import { mulberry32 } from './world';
+import { getWorldSprites } from './worldSprites';
 
 export const TEX = 4; // множитель разрешения текстур тайлов (чёткие детали)
 
@@ -302,6 +303,7 @@ function radial(size: number, stops: [number, string][]): HTMLCanvasElement {
 
 export interface Gfx {
   floor: HTMLCanvasElement[][];
+  floorBig: HTMLCanvasElement[];
   face: HTMLCanvasElement[];
   top: HTMLCanvasElement[];
   aoN: HTMLCanvasElement; aoS: HTMLCanvasElement; aoW: HTMLCanvasElement; aoE: HTMLCanvasElement;
@@ -319,9 +321,17 @@ let G: Gfx | null = null;
 export function getGfx(): Gfx {
   if (G) return G;
   const floor: HTMLCanvasElement[][] = [];
+  const floorBig: HTMLCanvasElement[] = [];
   for (let t = 0; t < FLOOR_PAL.length; t++) {
     floor.push([]);
     for (let v = 0; v < 4; v++) floor[t].push(makeFloor(t, v));
+    // Бесшовный холст 512x512 для непрерывного мирового рендера пола (без сетки квадратов)
+    const fb = mk(512, 512);
+    const fbg = fb.getContext('2d')!;
+    const pal = FLOOR_PAL[t] || FLOOR_PAL[0];
+    fbg.fillStyle = cstr(pal.base);
+    fbg.fillRect(0, 0, 512, 512);
+    floorBig.push(fb);
   }
   const glowCache = new Map<string, HTMLCanvasElement>();
   const tintCache = new Map<string, HTMLCanvasElement>();
@@ -330,8 +340,8 @@ export function getGfx(): Gfx {
     const g = vg.getContext('2d')!;
     const gr = g.createRadialGradient(128, 128, 54, 128, 128, 188);
     gr.addColorStop(0, 'rgba(0,0,0,0)');
-    gr.addColorStop(0.7, 'rgba(0,0,0,0.3)');
-    gr.addColorStop(1, 'rgba(0,0,0,0.82)');
+    gr.addColorStop(0.7, 'rgba(16,14,34,0.08)');
+    gr.addColorStop(1, 'rgba(12,10,26,0.38)');
     g.fillStyle = gr;
     g.fillRect(0, 0, 256, 256);
   }
@@ -341,6 +351,7 @@ export function getGfx(): Gfx {
   const spark = radial(32, [[0, 'rgba(255,255,255,1)'], [0.35, 'rgba(255,230,150,0.9)'], [0.7, 'rgba(255,140,40,0.4)'], [1, 'rgba(255,120,30,0)']]);
   G = {
     floor,
+    floorBig,
     face: [makeWallFace(0), makeWallFace(1), makeWallFace(2)],
     top: [makeWallTop(0), makeWallTop(1), makeWallTop(2)],
     aoN: grad(8, 32, 0, 0, 0, 32, 0.7),
@@ -371,5 +382,67 @@ export function getGfx(): Gfx {
       return c;
     },
   };
+  const bank = getWorldSprites();
+  bank.onTilesReady(() => {
+    if (!G) return;
+    const S = TS * TEX;
+    const flImg = bank.tiles.floor;
+    const wlImg = bank.tiles.wall;
+    // Бесшовный современный пол (8×8 тайлов на один 512×512 лист без сетки и стыков)
+    const BIOME_TINT = [
+      'rgba(110,125,180,0.12)', // 0 storage
+      'rgba(220,175,110,0.20)', // 1 camp
+      'rgba(95,165,215,0.18)',  // 2 crypt
+      'rgba(175,120,220,0.20)', // 3 nest
+      'rgba(220,130,95,0.20)',  // 4 orc
+      'rgba(205,165,120,0.18)', // 5 ogre
+      'rgba(85,205,175,0.20)',  // 6 shrine
+      'rgba(235,195,95,0.24)',  // 7 treasure
+      'rgba(215,85,125,0.24)',  // 8 boss
+      'rgba(125,195,115,0.18)', // 9 goblin
+      'rgba(115,155,215,0.18)', // 10 haunted
+    ];
+
+    for (let t = 0; t < FLOOR_PAL.length; t++) {
+      const fb = G.floorBig[t];
+      const g = fb.getContext('2d')!;
+      g.clearRect(0, 0, 512, 512);
+      g.imageSmoothingEnabled = true;
+      g.drawImage(flImg, 0, 0, 512, 512);
+
+      // Мягкое сбалансированное тонирование биома
+      g.save();
+      g.globalCompositeOperation = 'soft-light';
+      g.fillStyle = BIOME_TINT[t] || BIOME_TINT[0];
+      g.fillRect(0, 0, 512, 512);
+      g.restore();
+
+      // Лёгкое приглушение яркости для комфортного контраста с героем и эффектами
+      g.fillStyle = t === 8 ? 'rgba(28,12,24,0.20)' : 'rgba(14,16,28,0.16)';
+      g.fillRect(0, 0, 512, 512);
+    }
+
+    // 32-bit фасадная кирпичная кладка стен (нижняя часть текстуры) и верхний обсидиановый карниз
+    for (let v = 0; v < 3; v++) {
+      const cf = G.face[v];
+      const gf = cf.getContext('2d')!;
+      gf.clearRect(0, 0, S, S);
+      gf.imageSmoothingEnabled = true;
+      gf.drawImage(wlImg, 0, wlImg.height * 0.42, wlImg.width, wlImg.height * 0.58, 0, 0, S, S);
+      const ao = gf.createLinearGradient(0, S * 0.68, 0, S);
+      ao.addColorStop(0, 'rgba(0,0,0,0)');
+      ao.addColorStop(1, 'rgba(14,12,30,0.38)');
+      gf.fillStyle = ao;
+      gf.fillRect(0, S * 0.68, S, S * 0.32);
+
+      const ct = G.top[v];
+      const gt = ct.getContext('2d')!;
+      gt.clearRect(0, 0, S, S);
+      gt.imageSmoothingEnabled = true;
+      gt.drawImage(wlImg, 0, 0, wlImg.width, wlImg.height * 0.42, 0, 0, S, S);
+      gt.fillStyle = 'rgba(255,255,255,0.04)';
+      gt.fillRect(0, 0, S, S);
+    }
+  });
   return G;
 }

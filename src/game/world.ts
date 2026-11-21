@@ -211,9 +211,9 @@ function tryBuild(seed: number, force: boolean): World | null {
     const p = pool().filter(cond);
     return p.length ? p[int(p.length)] : null;
   };
-  for (let i = 0; i < 3 && pool().length > 8; i++) {
-    const r = pickRand((q) => q.diff > 0.2 && q.w * q.h >= 50);
-    if (r) { r.kind = i === 0 ? 'vault' : 'treasure'; taken.add(r); }
+  for (let i = 0; i < 5 && pool().length > 8; i++) {
+    const r = pickRand((q) => q.diff > 0.08 && q.w * q.h >= 42);
+    if (r) { r.kind = i < 3 ? 'vault' : 'treasure'; taken.add(r); }
   }
   const subs = ['blood', 'power', 'life', 'fortune', 'curse'].sort(() => rand() - 0.5);
   for (let i = 0; i < 5 && pool().length > 7; i++) {
@@ -369,6 +369,7 @@ function tryBuild(seed: number, force: boolean): World | null {
         const n = 2 + int(2);
         const mimic = rand() < 0.4 ? int(n) : -1;
         for (let i = 0; i < n; i++) addP(i === mimic ? 'mimic' : (rand() < 0.45 ? 'ironchest' : 'chest'), r, 1, 1);
+        if (rand() < 0.55) addP('vault', r, 1, 1);
         addP('spikes', r, 3 + int(3), 1); addP('brazier', r, 2, 1);
         addE(d > 0.4 ? 'orc' : 'skeleton', r, 1); addE(d > 0.3 ? 'skelArcher' : 'goblin', r, 2);
         addDecals(r, ['rug', 'rug', 'crack'], 3);

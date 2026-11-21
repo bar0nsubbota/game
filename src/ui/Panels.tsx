@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Coins, Crown, FlaskConical, Gem, Home, KeyRound, Play, RotateCcw, Skull, Sparkles, Store, Swords, Volume2, VolumeX } from 'lucide-react';
+import { Coins, Crown, FlaskConical, Gem, Home, KeyRound, Play, RotateCcw, Skull, Smartphone, Sparkles, Store, Swords, Volume2, VolumeX } from 'lucide-react';
 import type { Game } from '../game/engine';
 import type { HudState, RunSummary } from '../game/types';
 import { ATTRS, MAX_POTIONS, RARITY, SKILLS, WEAPONS, fmtStat, type AttrKey, type StatKey, type WeaponDef } from '../game/data';
@@ -195,11 +195,48 @@ export function ShopPanel({ game, hud, onClose }: { game: Game; hud: HudState; o
   );
 }
 
-export function PausePanel({ muted, onResume, onHelp, onMute, onQuit }: { muted: boolean; onResume: () => void; onHelp: () => void; onMute: () => void; onQuit: () => void }) {
+export function PausePanel({
+  muted, landscape, onToggleLandscape, onResume, onHelp, onMute, onQuit,
+}: {
+  muted: boolean;
+  landscape: boolean;
+  onToggleLandscape: () => void;
+  onResume: () => void;
+  onHelp: () => void;
+  onMute: () => void;
+  onQuit: () => void;
+}) {
   return (
     <Modal title="Пауза" onClose={onResume}>
       <div className="mx-auto flex max-w-xs flex-col gap-2.5">
         <button onClick={onResume} className="btn-gold flex items-center justify-center gap-2 rounded-lg py-3 font-bold"><Play size={18} />Продолжить</button>
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-amber-800/50 bg-black/45 px-3.5 py-2.5">
+          <div className="flex items-center gap-2.5">
+            <Smartphone size={18} className={cn('text-amber-300 transition-transform duration-200', landscape && 'rotate-90')} />
+            <div className="text-left">
+              <div className="text-sm font-semibold text-amber-100">Горизонтальный экран</div>
+              <div className="text-[11px] text-zinc-400">Поворот для мобильного режима</div>
+            </div>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={landscape}
+            aria-label="Горизонтальный экран"
+            onClick={onToggleLandscape}
+            className={cn(
+              'relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full border transition-colors duration-200',
+              landscape ? 'border-amber-300 bg-amber-500/85' : 'border-zinc-600 bg-zinc-800',
+            )}
+          >
+            <span
+              className={cn(
+                'inline-block h-5 w-5 rounded-full bg-white shadow transition-transform duration-200',
+                landscape ? 'translate-x-6' : 'translate-x-1',
+              )}
+            />
+          </button>
+        </div>
         <button onClick={onHelp} className="btn-dark flex items-center justify-center gap-2 rounded-lg py-3 font-semibold">Управление и советы</button>
         <button onClick={onMute} className="btn-dark flex items-center justify-center gap-2 rounded-lg py-3 font-semibold">{muted ? <VolumeX size={18} /> : <Volume2 size={18} />}{muted ? 'Включить звук' : 'Выключить звук'}</button>
         <button onClick={onQuit} className="btn-dark flex items-center justify-center gap-2 rounded-lg py-3 font-semibold text-red-300"><Home size={18} />Покинуть забег</button>

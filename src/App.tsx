@@ -1,5 +1,5 @@
-import { useMemo, useRef, useState } from 'react';
-import { Keyboard, Play, Skull } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Download, Keyboard, Play, Skull } from 'lucide-react';
 import menuImg from './assets/menu.jpg';
 import { GameScreen } from './ui/GameScreen';
 import { HelpPanel, MetaPanel } from './ui/Panels';
@@ -12,6 +12,41 @@ export default function App() {
   const [runId, setRunId] = useState(0);
   const [meta, setMeta] = useState<Meta>(() => loadMeta());
   const [modal, setModal] = useState<null | 'meta' | 'help'>(null);
+  const [installPrompt, setInstallPrompt] = useState<(Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: string }> }) | null>(null);
+  const [installed, setInstalled] = useState(() =>
+    window.matchMedia('(display-mode: standalone)').matches || (navigator as Navigator & { standalone?: boolean }).standalone === true,
+  );
+  const [installHint, setInstallHint] = useState<string | null>(null);
+
+  useEffect(() => {
+    const onBip = (e: Event) => {
+      e.preventDefault();
+      setInstallPrompt(e as Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: string }> });
+    };
+    const onInstalled = () => { setInstalled(true); setInstallPrompt(null); setInstallHint(null); };
+    window.addEventListener('beforeinstallprompt', onBip);
+    window.addEventListener('appinstalled', onInstalled);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', onBip);
+      window.removeEventListener('appinstalled', onInstalled);
+    };
+  }, []);
+
+  const handleInstall = async () => {
+    if (installPrompt) {
+      await installPrompt.prompt();
+      const res = await installPrompt.userChoice;
+      if (res.outcome === 'accepted') setInstalled(true);
+      setInstallPrompt(null);
+      return;
+    }
+    const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
+    setInstallHint(
+      isIos
+        ? 'На iPhone нажмите кнопку «Поделиться» внизу браузера → «На экран „Домой“».'
+        : 'Откройте меню браузера (⋮) и выберите «Установить приложение» или «Добавить на главный экран».',
+    );
+  };
   const metaRef = useRef(meta);
   metaRef.current = meta;
 
@@ -80,6 +115,16 @@ export default function App() {
           <button onClick={() => setModal('help')} className="btn-dark flex items-center justify-center gap-2 rounded-xl py-3 font-semibold">
             <Keyboard size={18} /> Управление
           </button>
+          {!installed && (
+            <button onClick={handleInstall} className="btn-dark flex items-center justify-center gap-2 rounded-xl border border-amber-500/50 py-2.5 text-sm font-semibold text-amber-200">
+              <Download size={16} /> Установить как приложение
+            </button>
+          )}
+          {installHint && (
+            <div className="rounded-lg border border-amber-600/50 bg-black/80 px-3 py-2 text-xs leading-snug text-amber-100">
+              {installHint}
+            </div>
+          )}
         </div>
         <div className="mt-4 text-xs text-zinc-500">
           Рекорд: {meta.bestKills} убийств · {meta.bestLevel} ур. · побед: {meta.wins} · ПК и телефон

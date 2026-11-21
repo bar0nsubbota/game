@@ -2,6 +2,7 @@ import { MAP_H, MAP_W, TS } from './data';
 import type { Game } from './engine';
 import { getGfx } from './gfx';
 import * as S from './sprites';
+import { getWorldSprites } from './worldSprites';
 
 const TAU = Math.PI * 2;
 const easeOut = (t: number) => 1 - (1 - t) * (1 - t);
@@ -29,7 +30,7 @@ export function renderGame(g: Game, now: number) {
   const sh = g.cam.shake;
   const cx = g.cam.x + (Math.random() - 0.5) * sh, cy = g.cam.y + (Math.random() - 0.5) * sh;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.fillStyle = '#050409';
+  ctx.fillStyle = '#141322';
   ctx.fillRect(0, 0, g.canvas.width, g.canvas.height);
   const sc = dpr * zoom;
   const setWorld = () => ctx.setTransform(sc, 0, 0, sc, (dpr * W) / 2 - cx * sc, (dpr * H) / 2 - cy * sc);
@@ -47,7 +48,10 @@ export function renderGame(g: Game, now: number) {
       if (!k) continue;
       const px = tx * TS, py = ty * TS, v = map.variant[i], m = map.mask[i];
       if (k === 1) {
-        ctx.drawImage(gfx.floor[map.theme[i]][v & 3], px, py, TS + 1, TS + 1);
+        const fl = gfx.floorBig[map.theme[i]] || gfx.floorBig[0];
+        const span = 8;
+        const sw = fl.width / span;
+        ctx.drawImage(fl, (tx % span) * sw, (ty % span) * sw, sw, sw, px, py, TS + 1, TS + 1);
         if (m) {
           if (m & 1) ctx.drawImage(gfx.aoN, px, py, TS + 1, TS * 0.6);
           if (m & 2) ctx.drawImage(gfx.aoE, px + TS * 0.7, py, TS * 0.3 + 1, TS + 1);
@@ -143,7 +147,14 @@ export function renderGame(g: Game, now: number) {
         const a = p.iframes > 0 && p.dashT <= 0 ? (Math.sin(now * 50) > 0 ? 0.5 : 0.95) : p.dashT > 0 ? 0.8 : 1;
         if (p.danceT > 0) {
           ctx.globalCompositeOperation = 'lighter';
-          ctx.fillStyle = 'rgba(255,50,100,0.16)'; ctx.beginPath(); ctx.arc(0, -18, 30 + Math.sin(now * 12) * 3, 0, TAU); ctx.fill();
+          const dc = w.id === 'rusty' ? '#ff2e63' : w.c.glow;
+          const dr = 42 + Math.sin(now * 14) * 5;
+          const dg = ctx.createRadialGradient(0, -18, 4, 0, -18, dr);
+          dg.addColorStop(0, rgba(w.id === 'rusty' ? '#ffd27a' : w.c.edge, 0.24));
+          dg.addColorStop(0.5, rgba(dc, 0.26));
+          dg.addColorStop(1, rgba(dc, 0));
+          ctx.fillStyle = dg;
+          ctx.beginPath(); ctx.arc(0, -18, dr, 0, TAU); ctx.fill();
           ctx.globalCompositeOperation = 'source-over';
         }
         S.drawPlayer(ctx, p, w, a);
@@ -209,14 +220,14 @@ export function renderGame(g: Game, now: number) {
   L.setTransform(1, 0, 0, 1, 0, 0);
   L.globalCompositeOperation = 'source-over';
   L.globalAlpha = 1;
-  L.fillStyle = 'rgba(6,5,12,0.9)';
+  L.fillStyle = 'rgba(14,12,28,0.28)';
   L.clearRect(0, 0, lw, lh);
   L.fillRect(0, 0, lw, lh);
   const ls = 0.5 * zoom;
   L.setTransform(ls, 0, 0, ls, lw / 2 - cx * ls, lh / 2 - cy * ls);
   L.globalCompositeOperation = 'destination-out';
   const light = (x: number, y: number, r: number, a = 1) => { L.globalAlpha = a; L.drawImage(gfx.light, x - r, y - r, r * 2, r * 2); };
-  light(p.x, p.y - 14, 290 + Math.sin(now * 7) * 6, 1);
+  light(p.x, p.y - 14, 460 + Math.sin(now * 7) * 8, 1);
   const glows: { x: number; y: number; r: number; c: string; a: number }[] = [];
   for (const t of g.world.torches) {
     if (t.x < left - 260 || t.x > right + 260 || t.y < top - 260 || t.y > bottom + 260) continue;
@@ -281,21 +292,130 @@ export function renderGame(g: Game, now: number) {
       ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = e.seal ? '#e2c3ff' : '#ffd88a';
       ctx.strokeStyle = 'rgba(0,0,0,0.8)'; ctx.lineWidth = 2.5; ctx.strokeText(e.name, e.x, by - 3); ctx.fillText(e.name, e.x, by - 3);
     }
-    // иконки статусов
-    let ix = bx;
-    const icon = (c: string) => { ctx.fillStyle = c; ctx.beginPath(); ctx.arc(ix + 3, by + 9, 2.6, 0, TAU); ctx.fill(); ix += 7; };
-    if (e.st.poison) icon('#7dff4a'); if (e.st.bleed) icon('#ff4b5f'); if (e.st.burnT > 0) icon('#ff9a2e'); if (e.st.chill) icon('#8fe8ff');
+    // готические мини-иконки дебаффов (Яд, Кровотечение, Поджог, Холод/Заморозка)
+    let ix = bx + 5;
+    const iy = by + 11;
+    const drawBadge = (bg: string, border: string, drawSym: (cx: number, cy: number) => void, stacks = 0) => {
+      ctx.save();
+      ctx.fillStyle = bg; ctx.strokeStyle = border; ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.roundRect(ix - 5.5, iy - 5.5, 11, 11, 2.5); ctx.fill(); ctx.stroke();
+      drawSym(ix, iy);
+      if (stacks > 1) {
+        ctx.font = 'bold 7.5px monospace'; ctx.textAlign = 'right'; ctx.fillStyle = '#ffffff';
+        ctx.strokeStyle = '#000'; ctx.lineWidth = 2;
+        ctx.strokeText(String(stacks), ix + 6, iy + 6);
+        ctx.fillText(String(stacks), ix + 6, iy + 6);
+      }
+      ctx.restore();
+      ix += 13;
+    };
+    if (e.st.poison > 0) {
+      drawBadge('#0c2414', '#4ade80', (cx, cy) => {
+        ctx.fillStyle = '#4ade80';
+        ctx.beginPath(); ctx.moveTo(cx, cy - 4); ctx.quadraticCurveTo(cx + 3.8, cy + 1, cx, cy + 3.8); ctx.quadraticCurveTo(cx - 3.8, cy + 1, cx, cy - 4); ctx.fill();
+        ctx.fillStyle = '#dcfce7'; ctx.beginPath(); ctx.arc(cx - 0.8, cy + 0.5, 1, 0, TAU); ctx.fill();
+      }, e.st.poison);
+    }
+    if (e.st.bleed > 0) {
+      drawBadge('#2b0a12', '#f43f5e', (cx, cy) => {
+        ctx.fillStyle = '#f43f5e';
+        ctx.beginPath(); ctx.moveTo(cx, cy - 4.2); ctx.lineTo(cx + 3.4, cy + 1.2); ctx.arc(cx, cy + 1.2, 3.4, 0, Math.PI); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = '#ffe4e6'; ctx.fillRect(cx - 1.4, cy, 1.1, 2);
+      }, e.st.bleed);
+    }
+    if (e.st.burnT > 0) {
+      drawBadge('#2b1206', '#fb923c', (cx, cy) => {
+        const fl = Math.sin(now * 16 + e.id) * 0.8;
+        ctx.fillStyle = '#f97316';
+        ctx.beginPath(); ctx.moveTo(cx - 3.4, cy + 3.5); ctx.quadraticCurveTo(cx - 3.8, cy - 1, cx + fl, cy - 4.4); ctx.quadraticCurveTo(cx + 3.8, cy - 1, cx + 3.4, cy + 3.5); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = '#fef08a';
+        ctx.beginPath(); ctx.moveTo(cx - 1.6, cy + 3.2); ctx.quadraticCurveTo(cx, cy - 1.2, cx + 1.6, cy + 3.2); ctx.closePath(); ctx.fill();
+      });
+    }
+    if (e.st.chill > 0 || e.st.freezeT > 0) {
+      drawBadge('#082032', '#38bdf8', (cx, cy) => {
+        ctx.strokeStyle = e.st.freezeT > 0 ? '#e0f2fe' : '#38bdf8'; ctx.lineWidth = 1.3;
+        for (let k = 0; k < 3; k++) {
+          const a = (k * Math.PI) / 3;
+          ctx.beginPath(); ctx.moveTo(cx - Math.cos(a) * 3.8, cy - Math.sin(a) * 3.8); ctx.lineTo(cx + Math.cos(a) * 3.8, cy + Math.sin(a) * 3.8); ctx.stroke();
+        }
+      }, e.st.chill);
+    }
   }
   ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
   for (const t of g.texts) {
-    if (!inView(t.x, t.y, 60)) continue;
+    if (!inView(t.x, t.y, 70)) continue;
     const u = t.t / t.max;
-    ctx.globalAlpha = u > 0.6 ? 1 - (u - 0.6) / 0.4 : 1;
-    const sz = 14 * t.size * (u < 0.15 ? 0.7 + u * 2 : 1);
-    ctx.font = `800 ${sz}px "Trebuchet MS", sans-serif`;
-    ctx.lineWidth = 3.5; ctx.strokeStyle = 'rgba(0,0,0,0.85)'; ctx.lineJoin = 'round';
-    ctx.strokeText(t.text, t.x, t.y); ctx.fillStyle = t.col; ctx.fillText(t.text, t.x, t.y);
+    const alpha = u > 0.64 ? Math.max(0, 1 - (u - 0.64) / 0.36) : 1;
+    // Пружинистый гача-вылет: быстрый поп 0.55 -> 1.24 -> 1.0
+    const popScale = u < 0.12
+      ? 0.55 + easeOut(u / 0.12) * 0.69
+      : u < 0.26
+        ? 1.24 - ((u - 0.12) / 0.14) * 0.24
+        : u > 0.72
+          ? 1 - ((u - 0.72) / 0.28) * 0.14
+          : 1;
+    const isLvl = t.text.includes('УРОВЕНЬ');
+    const isCrit = isLvl || t.size >= 1.22 || t.text.includes('!');
+    const basePx = isLvl ? 26 : isCrit ? 19.5 : 16.5;
+    const sz = isLvl
+      ? Math.min(36, basePx * popScale)
+      : Math.min(27, basePx * Math.min(1.38, t.size) * popScale);
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(t.x, t.y);
+    ctx.font = `${isCrit ? 'italic ' : ''}900 ${sz.toFixed(1)}px "Segoe UI", "Trebuchet MS", system-ui, sans-serif`;
+    ctx.lineJoin = 'round';
+    ctx.miterLimit = 2;
+
+    // Мягкая глубокая тень снизу для читаемости
+    ctx.fillStyle = 'rgba(8,5,16,0.72)';
+    ctx.fillText(t.text, 0, 2.2);
+
+    // Плотный тёмный контур как в гача-RPG
+    ctx.lineWidth = isCrit ? 4.8 : 4.0;
+    ctx.strokeStyle = isCrit ? '#2b0d06' : '#110c1c';
+    ctx.strokeText(t.text, 0, 0);
+
+    // Глянцевый вертикальный градиент заливки
+    const grad = ctx.createLinearGradient(0, -sz * 0.55, 0, sz * 0.5);
+    if (isCrit) {
+      grad.addColorStop(0, '#fffbe0');
+      grad.addColorStop(0.45, '#ffd43b');
+      grad.addColorStop(1, '#ff6b1a');
+    } else if (t.col === '#fff' || t.col === '#ffffff' || t.col === '#eee') {
+      grad.addColorStop(0, '#ffffff');
+      grad.addColorStop(0.55, '#f1f5f9');
+      grad.addColorStop(1, '#b8c4d8');
+    } else {
+      grad.addColorStop(0, '#ffffff');
+      grad.addColorStop(0.32, t.col);
+      grad.addColorStop(1, t.col);
+    }
+    ctx.fillStyle = grad;
+    ctx.fillText(t.text, 0, 0);
+
+    // Четырёхлучевая гача-искра на критах
+    if (isCrit && u < 0.72) {
+      const tw = ctx.measureText(t.text).width;
+      const sx = tw * 0.52 + 3;
+      const sy = -sz * 0.34;
+      const sr = (4.5 + Math.sin(u * 20) * 1.2) * (1 - u * 0.4);
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.fillStyle = '#fff3b0';
+      ctx.beginPath();
+      ctx.moveTo(sx, sy - sr); ctx.lineTo(sx + sr * 0.28, sy - sr * 0.28);
+      ctx.lineTo(sx + sr, sy); ctx.lineTo(sx + sr * 0.28, sy + sr * 0.28);
+      ctx.lineTo(sx, sy + sr); ctx.lineTo(sx - sr * 0.28, sy + sr * 0.28);
+      ctx.lineTo(sx - sr, sy); ctx.lineTo(sx - sr * 0.28, sy - sr * 0.28);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
   }
+  ctx.textBaseline = 'alphabetic';
   ctx.globalAlpha = 1;
 
   // ---- экранные эффекты
@@ -379,24 +499,28 @@ function drawFx(ctx: CanvasRenderingContext2D, f: import('./types').Fx) {
     ctx.translate(f.x, f.y); ctx.scale(1, 0.6);
     const r = f.r * easeOut(u);
     ctx.globalCompositeOperation = 'lighter';
-    // мягкое кольцо-свечение
-    ctx.globalAlpha = (1 - u) * 0.5;
-    ctx.strokeStyle = f.col; ctx.lineWidth = 10 * (1 - u) + 2;
+    // двойная неоновая ударная волна
+    ctx.globalAlpha = (1 - u) * 0.55;
+    ctx.strokeStyle = f.col; ctx.lineWidth = 14 * (1 - u) + 2.5;
     ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.stroke();
+    ctx.globalAlpha = (1 - u) * 0.32;
+    ctx.strokeStyle = f.col; ctx.lineWidth = 6 * (1 - u) + 1;
+    ctx.beginPath(); ctx.arc(0, 0, r * 0.72, 0, TAU); ctx.stroke();
     // яркий тонкий ободок
-    ctx.globalAlpha = (1 - u) * 0.95;
-    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2.5 * (1 - u) + 0.5;
+    ctx.globalAlpha = (1 - u) * 0.98;
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3 * (1 - u) + 0.6;
     ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.stroke();
     ctx.globalCompositeOperation = 'source-over';
   } else if (f.kind === 'pillar') {
     const env = u < 0.4 ? u / 0.4 : (1 - u) / 0.6;
     const w = f.r * 0.9 * (0.6 + 0.4 * env);
     const gr = ctx.createLinearGradient(0, f.y - 260, 0, f.y);
-    gr.addColorStop(0, 'rgba(255,240,170,0)'); gr.addColorStop(1, `rgba(255,240,170,${0.85 * env})`);
+    const pcol = f.col && f.col.startsWith('#') ? f.col : '#ffe68a';
+    gr.addColorStop(0, rgba(pcol, 0)); gr.addColorStop(1, rgba(pcol, 0.88 * env));
     ctx.globalCompositeOperation = 'lighter';
     ctx.fillStyle = gr; ctx.fillRect(f.x - w / 2, f.y - 260, w, 260);
-    ctx.fillStyle = `rgba(255,255,255,${0.5 * env})`; ctx.fillRect(f.x - w / 5, f.y - 260, w / 2.5, 260);
-    ctx.fillStyle = `rgba(255,230,140,${0.5 * env})`; ctx.beginPath(); ctx.ellipse(f.x, f.y, f.r * env, f.r * 0.6 * env, 0, 0, TAU); ctx.fill();
+    ctx.fillStyle = `rgba(255,255,255,${0.55 * env})`; ctx.fillRect(f.x - w / 5, f.y - 260, w / 2.5, 260);
+    ctx.fillStyle = rgba(pcol, 0.55 * env); ctx.beginPath(); ctx.ellipse(f.x, f.y, f.r * env, f.r * 0.6 * env, 0, 0, TAU); ctx.fill();
   } else if (f.kind === 'beam') {
     ctx.globalCompositeOperation = 'lighter';
     ctx.globalAlpha = 1 - u; ctx.lineCap = 'round';
@@ -408,84 +532,398 @@ function drawFx(ctx: CanvasRenderingContext2D, f: import('./types').Fx) {
   ctx.restore();
 }
 
+// Живая палитра комнат для иллюстрированного фэнтези-атласа подземелья
+const MAP_ROOM_STYLE: Record<string, { fillA: string; fillB: string; stroke: string }> = {
+  camp:     { fillA: 'rgba(186,124,54,0.88)',  fillB: 'rgba(122,74,28,0.92)',  stroke: '#ffd97d' },
+  shrine:   { fillA: 'rgba(34,168,158,0.86)',  fillB: 'rgba(18,104,104,0.92)', stroke: '#7df9e8' },
+  treasure: { fillA: 'rgba(214,162,42,0.88)',  fillB: 'rgba(138,98,20,0.92)',  stroke: '#ffe98a' },
+  vault:    { fillA: 'rgba(176,94,218,0.88)',  fillB: 'rgba(104,46,142,0.92)', stroke: '#ffd97d' },
+  boss:     { fillA: 'rgba(182,36,62,0.88)',   fillB: 'rgba(102,16,34,0.94)',  stroke: '#ff7b96' },
+  crypt:    { fillA: 'rgba(84,118,166,0.86)',  fillB: 'rgba(48,70,108,0.92)',  stroke: '#a8ccff' },
+  haunted:  { fillA: 'rgba(112,86,174,0.86)',  fillB: 'rgba(68,48,116,0.92)',  stroke: '#cfb5ff' },
+  nest:     { fillA: 'rgba(138,78,152,0.86)',  fillB: 'rgba(84,42,96,0.92)',   stroke: '#e5a8f5' },
+  goblin:   { fillA: 'rgba(88,144,82,0.86)',   fillB: 'rgba(52,92,48,0.92)',   stroke: '#b0eb9f' },
+  orc:      { fillA: 'rgba(168,86,62,0.86)',   fillB: 'rgba(106,48,34,0.92)',  stroke: '#f5a98c' },
+  ogre:     { fillA: 'rgba(146,108,72,0.86)',  fillB: 'rgba(92,66,42,0.92)',   stroke: '#e0c09a' },
+  storage:  { fillA: 'rgba(104,118,144,0.86)', fillB: 'rgba(64,74,94,0.92)',   stroke: '#bccce8' },
+};
+const MAP_ROOM_DEFAULT = { fillA: 'rgba(104,118,144,0.86)', fillB: 'rgba(64,74,94,0.92)', stroke: '#bccce8' };
+
+function isRoomExplored(g: Game, r: import('./world').Room): boolean {
+  const ex = g.explored;
+  if (ex[r.cy * MAP_W + r.cx]) return true;
+  const x0 = Math.max(0, r.x + 1), x1 = Math.min(MAP_W - 1, r.x + r.w - 2);
+  const y0 = Math.max(0, r.y + 1), y1 = Math.min(MAP_H - 1, r.y + r.h - 2);
+  return !!(ex[y0 * MAP_W + x0] || ex[y0 * MAP_W + x1] || ex[y1 * MAP_W + x0] || ex[y1 * MAP_W + x1]);
+}
+
+function drawVectorDungeon(
+  g: Game,
+  ctx: CanvasRenderingContext2D,
+  tf: (tx: number, ty: number) => [number, number],
+  scale: number,
+  showUnexplored: boolean,
+  clipMinX: number,
+  clipMinY: number,
+  clipMaxX: number,
+  clipMaxY: number,
+) {
+  const map = g.world.map;
+  const ex = g.explored;
+  const corr = map.corr;
+
+  const tilePx = Math.max(1.6, scale + 0.7);
+  const startTx = Math.max(0, Math.floor(clipMinX) - 1);
+  const endTx = Math.min(MAP_W - 1, Math.ceil(clipMaxX) + 1);
+  const startTy = Math.max(0, Math.floor(clipMinY) - 1);
+  const endTy = Math.min(MAP_H - 1, Math.ceil(clipMaxY) + 1);
+
+  // Тёмная окантовка исследованных коридоров
+  ctx.fillStyle = 'rgba(16, 12, 22, 0.85)';
+  for (let ty = startTy; ty <= endTy; ty++) {
+    const row = ty * MAP_W;
+    for (let tx = startTx; tx <= endTx; tx++) {
+      const idx = row + tx;
+      if (!corr[idx] || !ex[idx]) continue;
+      const [px, py] = tf(tx, ty);
+      ctx.fillRect(px - 1, py - 1, tilePx + 2, tilePx + 2);
+    }
+  }
+  // Неисследованные коридоры — деликатный чернильный набросок на пергаменте
+  if (showUnexplored) {
+    ctx.fillStyle = 'rgba(215, 192, 150, 0.14)';
+    for (let ty = startTy; ty <= endTy; ty++) {
+      const row = ty * MAP_W;
+      for (let tx = startTx; tx <= endTx; tx++) {
+        const idx = row + tx;
+        if (!corr[idx] || ex[idx]) continue;
+        const [px, py] = tf(tx, ty);
+        ctx.fillRect(px, py, tilePx, tilePx);
+      }
+    }
+  }
+  // Исследованные коридоры — тёплый мощёный камень
+  ctx.fillStyle = 'rgba(182, 166, 148, 0.82)';
+  for (let ty = startTy; ty <= endTy; ty++) {
+    const row = ty * MAP_W;
+    for (let tx = startTx; tx <= endTx; tx++) {
+      const idx = row + tx;
+      if (!corr[idx] || !ex[idx]) continue;
+      const [px, py] = tf(tx, ty);
+      ctx.fillRect(px, py, tilePx, tilePx);
+    }
+  }
+
+  // Комнаты с живыми внутренними деталями ландшафта
+  for (const r of map.rooms) {
+    if (r.x + r.w < clipMinX - 2 || r.x > clipMaxX + 2 || r.y + r.h < clipMinY - 2 || r.y > clipMaxY + 2) continue;
+    const seen = isRoomExplored(g, r);
+    if (!seen && !showUnexplored) continue;
+
+    const [rx, ry] = tf(r.x, r.y);
+    const rw = r.w * scale;
+    const rh = r.h * scale;
+    const rad = Math.min(7, scale * 1.25);
+
+    ctx.save();
+    ctx.beginPath();
+    if (r.ellipse) {
+      ctx.ellipse(rx + rw / 2, ry + rh / 2, rw / 2, rh / 2, 0, 0, TAU);
+    } else {
+      ctx.roundRect(rx, ry, rw, rh, rad);
+    }
+
+    if (seen) {
+      const st = MAP_ROOM_STYLE[r.kind] || MAP_ROOM_DEFAULT;
+      const gr = ctx.createLinearGradient(rx, ry, rx, ry + rh);
+      gr.addColorStop(0, st.fillA);
+      gr.addColorStop(1, st.fillB);
+      ctx.fillStyle = gr;
+      ctx.fill();
+
+      ctx.strokeStyle = 'rgba(14, 10, 18, 0.92)';
+      ctx.lineWidth = Math.max(2.4, scale * 0.45);
+      ctx.stroke();
+      ctx.strokeStyle = st.stroke;
+      ctx.lineWidth = Math.max(1.2, scale * 0.24);
+      ctx.stroke();
+
+      // Лёгкий внутренний рельеф камня и детали биома
+      ctx.save();
+      ctx.clip();
+      ctx.fillStyle = 'rgba(255,248,225,0.14)';
+      ctx.fillRect(rx, ry, rw, Math.max(2.5, rh * 0.24));
+      if (r.kind === 'boss') {
+        ctx.strokeStyle = 'rgba(255,140,160,0.35)';
+        ctx.lineWidth = 1.2;
+        ctx.beginPath(); ctx.arc(rx + rw / 2, ry + rh / 2, Math.min(rw, rh) * 0.34, 0, TAU); ctx.stroke();
+      } else if (r.kind === 'camp') {
+        const fg = ctx.createRadialGradient(rx + rw / 2, ry + rh / 2, 1, rx + rw / 2, ry + rh / 2, Math.min(rw, rh) * 0.45);
+        fg.addColorStop(0, 'rgba(255,220,110,0.45)');
+        fg.addColorStop(1, 'rgba(255,160,40,0)');
+        ctx.fillStyle = fg;
+        ctx.fillRect(rx, ry, rw, rh);
+      }
+      ctx.restore();
+    } else {
+      // Неразведанная комната: лёгкий пергаментный набросок поверх ландшафта
+      ctx.fillStyle = r.kind === 'boss' ? 'rgba(130, 26, 48, 0.28)' : 'rgba(24, 18, 32, 0.36)';
+      ctx.fill();
+      ctx.setLineDash([3, 3]);
+      ctx.strokeStyle = r.kind === 'boss' ? 'rgba(255, 110, 130, 0.55)' : 'rgba(215, 192, 150, 0.28)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    ctx.restore();
+  }
+}
+
 function drawMinimap(g: Game, ctx: CanvasRenderingContext2D, W: number, H: number, now: number) {
   if (g.mmDirty) { g.mmCtx.putImageData(g.mmData, 0, 0); g.mmDirty = false; }
   const p = g.p;
+  const wb = getWorldSprites();
+  const mapBgImg = wb.props.map_bg;
   ctx.save();
-  ctx.imageSmoothingEnabled = false;
+
   if (g.showMap) {
-    const S = Math.min(W, H) * 0.86, x = (W - S) / 2, y = (H - S) / 2, k = S / MAP_W;
-    ctx.fillStyle = 'rgba(6,5,12,0.88)'; ctx.fillRect(0, 0, W, H);
-    ctx.fillStyle = 'rgba(20,18,30,0.9)'; ctx.fillRect(x - 6, y - 6, S + 12, S + 12);
-    ctx.strokeStyle = '#8a7030'; ctx.lineWidth = 2; ctx.strokeRect(x - 6, y - 6, S + 12, S + 12);
-    ctx.drawImage(g.mmOutline, 0, 0, MAP_W, MAP_H, x, y, S, S);
-    ctx.drawImage(g.mm, 0, 0, MAP_W, MAP_H, x, y, S, S);
-    markers(g, ctx, (tx, ty) => [x + tx * k, y + ty * k], k * 1.4 + 2, now);
-    ctx.font = '600 11px system-ui, sans-serif'; ctx.textAlign = 'center';
-    ctx.fillStyle = 'rgba(10,8,17,0.82)';
-    ctx.fillRect(x + 2, y + 2, S - 4, 22);
-    ctx.fillStyle = '#d7b0ff';
-    ctx.fillText(g.sealsCollected < g.world.guardians.length
-      ? `Печати ${g.sealsCollected}/${g.world.guardians.length}  ·  фиолетовые метки: хранители`
-      : 'Печати сняты · идите к красной метке', W / 2, y + 17);
+    // --- ЖИВАЯ ИЛЛЮСТРИРОВАННАЯ КАРТА-АТЛАС ПОДЗЕМЕЛЬЯ ---
+    const S = Math.min(W * 0.90, H * 0.80);
+    const x = (W - S) / 2;
+    const y = (H - S) / 2;
+    const k = S / MAP_W;
+
+    const bgDim = ctx.createRadialGradient(W / 2, H / 2, S * 0.2, W / 2, H / 2, Math.max(W, H) * 0.75);
+    bgDim.addColorStop(0, 'rgba(14,11,22,0.84)');
+    bgDim.addColorStop(1, 'rgba(5,4,10,0.96)');
+    ctx.fillStyle = bgDim;
+    ctx.fillRect(0, 0, W, H);
+
+    const pad = 14;
+    ctx.save();
+    ctx.beginPath();
+    ctx.roundRect(x - pad, y - pad - 28, S + pad * 2, S + pad * 2 + 60, 16);
+    const cardGrad = ctx.createLinearGradient(x, y - pad - 28, x, y + S + pad + 32);
+    cardGrad.addColorStop(0, '#2a2232');
+    cardGrad.addColorStop(0.5, '#1d1724');
+    cardGrad.addColorStop(1, '#14101a');
+    ctx.fillStyle = cardGrad;
+    ctx.fill();
+    ctx.strokeStyle = '#d8aa54';
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.roundRect(x - pad + 4, y - pad - 24, S + (pad - 4) * 2, S + (pad - 4) * 2 + 52, 12);
+    ctx.strokeStyle = 'rgba(255,224,150,0.28)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.restore();
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.roundRect(x, y, S, S, 10);
+    ctx.clip();
+    // Иллюстрированный подземный ландшафт (скалы, реки, мох, топография!)
+    if (mapBgImg && mapBgImg.complete && mapBgImg.naturalWidth > 0) {
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(mapBgImg, x, y, S, S);
+      // Лёгкая приглушённая вуаль, чтобы комнаты и пины читались мгновенно
+      ctx.fillStyle = 'rgba(14, 11, 20, 0.24)';
+      ctx.fillRect(x, y, S, S);
+    } else {
+      ctx.fillStyle = '#1e1929';
+      ctx.fillRect(x, y, S, S);
+    }
+
+    drawVectorDungeon(g, ctx, (tx, ty) => [x + tx * k, y + ty * k], k, true, 0, 0, MAP_W, MAP_H);
+    markers(g, ctx, (tx, ty) => [x + tx * k, y + ty * k], Math.max(9, k * 1.9 + 4), now);
+    ctx.restore();
+
+    ctx.textAlign = 'center';
+    ctx.font = '800 13px "Segoe UI", system-ui, sans-serif';
+    ctx.fillStyle = g.sealsCollected < g.world.guardians.length ? '#f5d0fe' : '#fde047';
+    ctx.fillText(
+      g.sealsCollected < g.world.guardians.length
+        ? `КАРТА ПОДЗЕМЕЛЬЯ  ·  ПЕЧАТИ ${g.sealsCollected}/${g.world.guardians.length}`
+        : 'КАРТА ПОДЗЕМЕЛЬЯ  ·  ТРОН КОРОЛЯ ОТКРЫТ',
+      W / 2,
+      y - 12,
+    );
+
+    const legY = y + S + 20;
+    const legend: [string, string][] = [
+      ['#38f2ff', 'Герой'],
+      ['#c084fc', 'Печати'],
+      ['#ef4444', 'Босс'],
+      ['#fbbf24', 'Торговец'],
+      ['#fde047', 'Сундуки'],
+    ];
+    ctx.font = '700 11px "Segoe UI", system-ui, sans-serif';
+    const itemW = Math.min(90, S / legend.length);
+    const startX = W / 2 - (itemW * legend.length) / 2 + itemW * 0.5;
+    legend.forEach(([col, label], idx) => {
+      const lx = startX + idx * itemW;
+      ctx.fillStyle = col;
+      ctx.beginPath(); ctx.arc(lx - 24, legY - 3.5, 4.2, 0, TAU); ctx.fill();
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#f1f5f9';
+      ctx.fillText(label, lx - 16, legY);
+    });
+
     ctx.restore();
     return;
   }
-  const S = minimapSize(W, H), x = W - S - 10, y = 10, T = 46, k = S / T;
-  ctx.fillStyle = 'rgba(8,6,14,0.72)';
-  ctx.beginPath(); ctx.roundRect(x, y, S, S, 10); ctx.fill();
+
+  // --- ЖИВАЯ МИНИ-КАРТА В УГЛУ С ПОДЗЕМНЫМ ЛАНДШАФТОМ ---
+  const S = minimapSize(W, H), x = W - S - 10, y = 10, T = 42, k = S / T;
+
   ctx.save();
-  ctx.beginPath(); ctx.roundRect(x, y, S, S, 10); ctx.clip();
-  const sx = p.x / TS - T / 2, sy = p.y / TS - T / 2;
-  const cx0 = Math.max(0, sx), cy0 = Math.max(0, sy), cx1 = Math.min(MAP_W, sx + T), cy1 = Math.min(MAP_H, sy + T);
-  ctx.drawImage(g.mm, cx0, cy0, cx1 - cx0, cy1 - cy0, x + (cx0 - sx) * k, y + (cy0 - sy) * k, (cx1 - cx0) * k, (cy1 - cy0) * k);
-  markers(g, ctx, (tx, ty) => [x + (tx - sx) * k, y + (ty - sy) * k], 3, now, S, x, y);
+  ctx.shadowColor = 'rgba(0,0,0,0.72)';
+  ctx.shadowBlur = 14;
+  ctx.shadowOffsetY = 4;
+  ctx.fillStyle = '#1b1624';
+  ctx.beginPath(); ctx.roundRect(x, y, S, S, 14); ctx.fill();
   ctx.restore();
-  ctx.strokeStyle = 'rgba(200,160,70,0.8)'; ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.roundRect(x, y, S, S, 10); ctx.stroke();
+
+  ctx.save();
+  ctx.beginPath(); ctx.roundRect(x, y, S, S, 14); ctx.clip();
+
+  const sx = p.x / TS - T / 2, sy = p.y / TS - T / 2;
+  // Плавно скользящий кусок иллюстрированного ландшафта прямо внутри миникарты!
+  if (mapBgImg && mapBgImg.complete && mapBgImg.naturalWidth > 0) {
+    ctx.imageSmoothingEnabled = true;
+    const mw = mapBgImg.naturalWidth, mh = mapBgImg.naturalHeight;
+    const srcX = Math.max(0, Math.min(mw - (T / MAP_W) * mw, (sx / MAP_W) * mw));
+    const srcY = Math.max(0, Math.min(mh - (T / MAP_H) * mh, (sy / MAP_H) * mh));
+    ctx.drawImage(mapBgImg, srcX, srcY, (T / MAP_W) * mw, (T / MAP_H) * mh, x, y, S, S);
+    ctx.fillStyle = 'rgba(14, 10, 20, 0.28)';
+    ctx.fillRect(x, y, S, S);
+  }
+
+  drawVectorDungeon(g, ctx, (tx, ty) => [x + (tx - sx) * k, y + (ty - sy) * k], k, false, sx, sy, sx + T, sy + T);
+  markers(g, ctx, (tx, ty) => [x + (tx - sx) * k, y + (ty - sy) * k], 7.5, now, S, x, y);
+
+  const inVig = ctx.createRadialGradient(x + S / 2, y + S / 2, S * 0.38, x + S / 2, y + S / 2, S * 0.72);
+  inVig.addColorStop(0, 'rgba(0,0,0,0)');
+  inVig.addColorStop(1, 'rgba(12,8,18,0.48)');
+  ctx.fillStyle = inVig;
+  ctx.fillRect(x, y, S, S);
+  ctx.restore();
+
+  const borderGrad = ctx.createLinearGradient(x, y, x + S, y + S);
+  borderGrad.addColorStop(0, '#f0c46c');
+  borderGrad.addColorStop(0.5, '#7a6345');
+  borderGrad.addColorStop(1, '#f0c46c');
+  ctx.strokeStyle = borderGrad;
+  ctx.lineWidth = 2.4;
+  ctx.beginPath(); ctx.roundRect(x, y, S, S, 14); ctx.stroke();
+
+  ctx.strokeStyle = 'rgba(255,245,215,0.18)';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.roundRect(x + 2.5, y + 2.5, S - 5, S - 5, 11.5); ctx.stroke();
+  ctx.restore();
+}
+
+function drawMapPin(
+  ctx: CanvasRenderingContext2D,
+  img: HTMLImageElement | undefined,
+  px: number,
+  py: number,
+  size: number,
+  glowCol?: string,
+) {
+  ctx.save();
+  if (glowCol) {
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = rgba(glowCol, 0.34);
+    ctx.beginPath(); ctx.arc(px, py, size * 0.56, 0, TAU); ctx.fill();
+    ctx.globalCompositeOperation = 'source-over';
+  }
+  if (img && img.complete && img.naturalWidth > 0) {
+    ctx.imageSmoothingEnabled = true;
+    ctx.shadowColor = 'rgba(0,0,0,0.75)';
+    ctx.shadowBlur = 5;
+    ctx.shadowOffsetY = 2;
+    ctx.drawImage(img, px - size * 0.5, py - size * 0.5, size, size);
+  }
   ctx.restore();
 }
 
 function markers(g: Game, ctx: CanvasRenderingContext2D, tf: (tx: number, ty: number) => [number, number], rad: number, now: number, S = 0, bx = 0, by = 0) {
   const p = g.p;
-  const inside = (x: number, y: number) => S === 0 || (x > bx + 2 && x < bx + S - 2 && y > by + 2 && y < by + S - 2);
+  const wb = getWorldSprites().props;
+  const inside = (x: number, y: number) => S === 0 || (x > bx + 7 && x < bx + S - 7 && y > by + 7 && y < by + S - 7);
+
+  // Пропы: Торговец (кастомный пин с мешком золота и фонарём), Сундуки (чиби-сундук), Алтари
   for (const pr of g.props) {
     if (pr.dead) continue;
     const tx = pr.x / TS, ty = pr.y / TS;
     if (!g.explored[Math.floor(ty) * MAP_W + Math.floor(tx)]) continue;
-    let col = '';
-    if (pr.kind === 'merchant') col = '#6dff8a';
-    else if (pr.kind === 'shrine' && pr.state === 0) col = '#d08aff';
-    else if ((pr.kind === 'chest' || pr.kind === 'ironchest' || pr.kind === 'vault' || pr.kind === 'mimic') && pr.state === 0) col = '#ffd84a';
-    if (!col) continue;
     const [px, py] = tf(tx, ty);
     if (!inside(px, py)) continue;
-    ctx.fillStyle = col; ctx.beginPath(); ctx.arc(px, py, rad * 0.7, 0, TAU); ctx.fill();
+    if (pr.kind === 'merchant') {
+      drawMapPin(ctx, wb.map_merchant, px, py, rad * 2.35, '#fbbf24');
+    } else if (pr.kind === 'shrine' && pr.state === 0) {
+      const r = rad * 0.65;
+      ctx.save();
+      ctx.fillStyle = '#0e0a16';
+      ctx.beginPath(); ctx.moveTo(px, py - r - 1.5); ctx.lineTo(px + r * 0.75 + 1, py); ctx.lineTo(px, py + r + 1.5); ctx.lineTo(px - r * 0.75 - 1, py); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#38bdf8'; ctx.strokeStyle = '#e0f2fe'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(px, py - r); ctx.lineTo(px + r * 0.7, py); ctx.lineTo(px, py + r); ctx.lineTo(px - r * 0.7, py); ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.restore();
+    } else if ((pr.kind === 'chest' || pr.kind === 'ironchest' || pr.kind === 'vault' || pr.kind === 'mimic') && pr.state === 0) {
+      const cImg = pr.kind === 'vault' ? wb.vault_closed : pr.kind === 'ironchest' ? wb.ironchest_closed : wb.chest_closed;
+      drawMapPin(ctx, cImg, px, py, rad * (pr.kind === 'vault' ? 1.85 : 1.5), pr.kind === 'vault' ? '#facc15' : undefined);
+    }
   }
+
+  // Активные враги
   for (const e of g.enemies) {
     if (e.dead || e.seal || (e.state === 'idle' && !e.boss)) continue;
     const tx = e.x / TS, ty = e.y / TS;
     const [px, py] = tf(tx, ty);
     if (!inside(px, py)) continue;
-    ctx.fillStyle = e.boss ? '#ff2a2a' : '#ff6a6a';
-    ctx.beginPath(); ctx.arc(px, py, e.boss ? rad * 1.4 : rad * 0.55, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#ff6b7a';
+    ctx.strokeStyle = '#18090d';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(px, py, Math.max(2.4, rad * 0.3), 0, TAU); ctx.fill(); ctx.stroke();
   }
+
+  // Хранители печатей: кастомная руническая печать-медальон
   for (const guardian of g.world.guardians) {
     if (g.sealsMask & (1 << (guardian.id - 1))) continue;
     if (!g.showMap && !g.explored[Math.floor(guardian.y / TS) * MAP_W + Math.floor(guardian.x / TS)]) continue;
     const [px, py] = tf(guardian.x / TS, guardian.y / TS);
     if (!inside(px, py)) continue;
-    const r = Math.max(4, rad * 1.35) + Math.sin(now * 4 + guardian.id) * 0.5;
-    ctx.fillStyle = '#b874ff'; ctx.strokeStyle = '#e9c8ff'; ctx.lineWidth = 1.2;
-    ctx.beginPath(); ctx.moveTo(px, py - r); ctx.lineTo(px + r * 0.8, py);
-    ctx.lineTo(px, py + r); ctx.lineTo(px - r * 0.8, py); ctx.closePath(); ctx.fill(); ctx.stroke();
+    const pulse = 1 + Math.sin(now * 4.5 + guardian.id) * 0.08;
+    drawMapPin(ctx, wb.map_seal, px, py, rad * 2.4 * pulse, '#c084fc');
   }
+
+  // Босс: кастомная иконка коронованного рогатого черепа
   const b = g.world.boss;
   if ((g.showMap || g.explored[b.cy * MAP_W + b.cx]) && !g.bossDone) {
     const [px, py] = tf(b.cx, b.cy);
-    if (inside(px, py)) { ctx.fillStyle = '#ff3a3a'; ctx.beginPath(); ctx.arc(px, py, rad * 1.5, 0, TAU); ctx.fill(); ctx.fillStyle = '#12060a'; ctx.fillRect(px - rad * 0.8, py - rad * 0.4, rad * 0.55, rad * 0.55); ctx.fillRect(px + rad * 0.25, py - rad * 0.4, rad * 0.55, rad * 0.55); }
+    if (inside(px, py)) {
+      const pulse = 1 + Math.sin(now * 4.2) * 0.07;
+      drawMapPin(ctx, wb.map_boss, px, py, rad * 2.75 * pulse, '#ef4444');
+    }
   }
+
+  // Герой: кастомный пин ассасина с маленьким бирюзовым указателем направления
   const [px, py] = tf(p.x / TS, p.y / TS);
-  ctx.fillStyle = '#ffffff'; ctx.strokeStyle = '#000'; ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.arc(px, py, rad * (0.9 + 0.15 * Math.sin(now * 6)), 0, TAU); ctx.fill(); ctx.stroke();
+  const hSz = rad * 2.45;
+  ctx.save();
+  ctx.translate(px, py);
+  ctx.rotate(p.lastDir);
+  ctx.fillStyle = '#38f2ff';
+  ctx.strokeStyle = '#090b14';
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(hSz * 0.52 + 4.5, 0);
+  ctx.lineTo(hSz * 0.52 - 1, -3.5);
+  ctx.lineTo(hSz * 0.52 - 1, 3.5);
+  ctx.closePath();
+  ctx.fill(); ctx.stroke();
+  ctx.restore();
+  drawMapPin(ctx, wb.map_hero, px, py, hSz, '#38f2ff');
 }

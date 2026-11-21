@@ -7,6 +7,7 @@ import { initAudio, isMuted, setMuted as setAudioMuted } from '../game/audio';
 import { Hud, type ToastItem } from './Hud';
 import { Controls } from './Controls';
 import { EndPanel, HelpPanel, HeroPanel, PausePanel, ShopPanel, type HeroTab } from './Panels';
+import { useWindowSize } from './common';
 
 type Panel = null | 'shop' | 'hero' | 'pause' | 'help' | 'dead' | 'victory';
 
@@ -42,6 +43,12 @@ export function GameScreen({ meta, onRunEnd, onMenu, onRestart }: Props) {
   const [muted, setMutedState] = useState(isMuted());
   const [touch, setTouch] = useState(() => window.matchMedia('(pointer: coarse)').matches);
   const [mapOpen, setMapOpen] = useState(false);
+  const [landscape, setLandscape] = useState(() => {
+    try { return localStorage.getItem('noctis_landscape') === '1'; } catch { return false; }
+  });
+  const win = useWindowSize();
+  const rot90 = landscape && win.h > win.w;
+  const viewSize = rot90 ? { w: win.h, h: win.w } : { w: win.w, h: win.h };
   const awarded = useRef(false);
   const idc = useRef(1);
   const panelRef = useRef<Panel>(null);
@@ -135,6 +142,24 @@ export function GameScreen({ meta, onRunEnd, onMenu, onRestart }: Props) {
   }, [setPanel]);
 
   const g = gameRef.current;
+  useEffect(() => {
+    if (gameRef.current) {
+      gameRef.current.rotated = rot90;
+      requestAnimationFrame(() => gameRef.current?.resize());
+    }
+  }, [rot90, win.w, win.h]);
+
+  const toggleLandscape = () => {
+    const next = !landscape;
+    setLandscape(next);
+    try { localStorage.setItem('noctis_landscape', next ? '1' : '0'); } catch { /* ignore */ }
+    try {
+      const ori = screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void>; unlock?: () => void };
+      if (next && ori?.lock) { ori.lock('landscape').catch(() => {}); }
+      else if (!next && ori?.unlock) { ori.unlock(); }
+    } catch { /* ignore */ }
+  };
+
   const toggleMute = () => { const m = !muted; setAudioMuted(m); setMutedState(m); };
   const openHero = () => { setHeroTab(hud && hud.points > 0 ? 'attrs' : 'loot'); setPanel('hero'); };
   const toggleMap = () => {
@@ -144,13 +169,25 @@ export function GameScreen({ meta, onRunEnd, onMenu, onRestart }: Props) {
     setMapOpen(open);
   };
 
+  const rootStyle = rot90
+    ? {
+        position: 'fixed' as const,
+        top: '50%',
+        left: '50%',
+        width: `${win.h}px`,
+        height: `${win.w}px`,
+        transform: 'translate(-50%, -50%) rotate(90deg)',
+        transformOrigin: 'center center',
+      }
+    : undefined;
+
   return (
-    <div className="absolute inset-0 overflow-hidden bg-black">
+    <div className={rot90 ? 'overflow-hidden bg-black' : 'absolute inset-0 overflow-hidden bg-black'} style={rootStyle}>
       <canvas ref={canvasRef} className="absolute inset-0 h-full w-full cursor-crosshair touch-none" />
       {hud && g && !mapOpen && (
         <>
-          <Hud hud={hud} toasts={toasts} touch={touch} muted={muted} onHero={openHero} onPause={() => setPanel('pause')} onMap={toggleMap} onMute={toggleMute} />
-          <Controls game={g} hud={hud} touch={touch} />
+          <Hud hud={hud} toasts={toasts} touch={touch} muted={muted} viewSize={viewSize} onHero={openHero} onPause={() => setPanel('pause')} onMap={toggleMap} onMute={toggleMute} />
+          <Controls game={g} hud={hud} touch={touch} rotated={rot90} viewSize={viewSize} />
         </>
       )}
       {mapOpen && (
@@ -168,7 +205,7 @@ export function GameScreen({ meta, onRunEnd, onMenu, onRestart }: Props) {
       )}
       {panel === 'shop' && hud && g && <ShopPanel game={g} hud={hud} onClose={() => setPanel(null)} />}
       {panel === 'hero' && hud && g && <HeroPanel game={g} hud={hud} tab={heroTab} setTab={setHeroTab} onClose={() => setPanel(null)} />}
-      {panel === 'pause' && <PausePanel muted={muted} onResume={() => setPanel(null)} onHelp={() => setPanel('help')} onMute={toggleMute} onQuit={() => { if (g) award(g.summary()); onMenu(); }} />}
+      {panel === 'pause' && <PausePanel muted={muted} landscape={landscape} onToggleLandscape={toggleLandscape} onResume={() => setPanel(null)} onHelp={() => setPanel('help')} onMute={toggleMute} onQuit={() => { if (g) award(g.summary()); onMenu(); }} />}
       {panel === 'help' && <HelpPanel onClose={() => setPanel('pause')} />}
       {panel === 'dead' && summary && <EndPanel kind="dead" summary={summary} onRestart={onRestart} onMenu={onMenu} />}
       {panel === 'victory' && summary && <EndPanel kind="victory" summary={summary} onRestart={onRestart} onMenu={onMenu} onContinue={() => setPanel(null)} />}

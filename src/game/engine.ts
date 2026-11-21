@@ -80,6 +80,7 @@ export class Game {
   mmData: ImageData;
   mmDirty = true; exploreT = 0;
   showMap = false;
+  rotated = false;
   boss: Enemy | null = null;
   bossActive = false;
   sealsMask = 0;
@@ -177,7 +178,10 @@ export class Game {
     this.W = w; this.H = h;
     this.canvas.width = Math.round(w * this.dpr);
     this.canvas.height = Math.round(h * this.dpr);
-    this.zoom = Math.max(0.85, Math.min(1.5, Math.min(w, h) / 560));
+    const mobile = touch || w < 640;
+    this.zoom = mobile
+      ? Math.max(1.12, Math.min(1.48, Math.min(w, h) / 340))
+      : Math.max(0.85, Math.min(1.5, Math.min(w, h) / 560));
   };
   frame = (ts: number) => {
     const raw = Math.min(0.05, (ts - this.last) / 1000);
@@ -224,7 +228,13 @@ export class Game {
   onPointerUp = (e: PointerEvent) => { if (e.pointerType === 'mouse' && e.button === 0) this.input.atkM = false; };
   setMouse(e: PointerEvent) {
     const r = this.canvas.getBoundingClientRect();
-    this.input.mouseX = e.clientX - r.left; this.input.mouseY = e.clientY - r.top;
+    if (this.rotated) {
+      this.input.mouseX = e.clientY - r.top;
+      this.input.mouseY = r.right - e.clientX;
+    } else {
+      this.input.mouseX = e.clientX - r.left;
+      this.input.mouseY = e.clientY - r.top;
+    }
   }
   // сенсорное управление
   setMove(x: number, y: number) { this.input.mx = x; this.input.my = y; this.input.mode = 'touch'; }
@@ -274,9 +284,9 @@ export class Game {
   weapon(): WeaponDef { return WEAPONS.find((w) => w.id === this.p.weapon) || WEAPONS[0]; }
   recalc() {
     const p = this.p, a = p.attrs, w = this.weapon(), wl = p.wLevels[w.id] || 0;
-    let dmg = 0.12 * a.dmg + this.meta.up.dmg * 0.04, atk = 0.09 * a.atk, hp = 100 + 16 * a.hp + 12 * this.meta.up.hp;
-    let mv = 0.05 * a.move, crit = 0.05 + 0.03 * a.crit, critDmg = 1.6, life = 0, dodge = w.effect === 'shadow' ? 0.1 : 0;
-    let cdr = 0.04 * a.cdr, regen = 0, gold = 0, xp = 0, magnet = 90, armor = 0;
+    let dmg = 0.12 * a.dmg + this.meta.up.dmg * 0.04, atk = 0.10 * a.atk, hp = 100 + 22 * a.hp + 12 * this.meta.up.hp;
+    let mv = 0.06 * a.move, crit = 0.05 + 0.04 * a.crit, critDmg = 1.6 + 0.10 * a.crit, life = 0, dodge = (w.effect === 'shadow' ? 0.1 : 0) + 0.025 * a.move;
+    let cdr = 0.08 * a.cdr, regen = 0.5 * a.hp, gold = 0, xp = 0, magnet = 90, armor = 0;
     for (const r of p.artifacts) {
       const v = r.value;
       switch (r.stat) {
@@ -294,7 +304,12 @@ export class Game {
     s.maxHp = hp;
     s.moveSpd = Math.min(430, 215 * (1 + mv));
     s.crit = Math.min(0.9, crit); s.critDmg = critDmg; s.life = life; s.dodge = Math.min(0.6, dodge);
-    s.cdr = Math.min(0.5, cdr); s.regen = regen; s.gold = gold; s.xp = xp; s.magnet = magnet; s.armor = Math.min(0.6, armor);
+    s.cdr = Math.min(0.62, cdr); s.regen = regen; s.gold = gold; s.xp = xp; s.magnet = magnet; s.armor = Math.min(0.6, armor);
+    // Сразу подрезаем текущие кулдауны скиллов при прокачке Мастерства теней
+    for (let i = 0; i < SKILLS.length; i++) {
+      const maxCd = SKILLS[i].cd * (1 - s.cdr);
+      if (p.skillCd[i] > maxCd) p.skillCd[i] = maxCd;
+    }
     if (s.maxHp > old && old > 0) p.hp += s.maxHp - old;
     p.hp = Math.min(p.hp, s.maxHp);
   }
@@ -388,7 +403,20 @@ export class Game {
     if (p.power > 0) { p.power -= dt; if (p.power <= 0) { p.power = 0; this.recalc(); } }
     if (p.danceT > 0) {
       p.danceT -= dt; p.danceFx -= dt;
-      if (p.danceFx <= 0) { p.danceFx = 0.05; this.ghosts.push({ x: p.x, y: p.y, face: p.face, t: 0.3, col: '#ff3a6a' }); }
+      if (p.danceFx <= 0) {
+        const w = this.weapon();
+        const dc = w.id === 'rusty' ? '#ff2e63' : w.c.glow;
+        const ds = w.id === 'rusty' ? '#ffd27a' : w.c.edge;
+        p.danceFx = 0.055;
+        this.ghosts.push({ x: p.x, y: p.y, face: p.face, t: 0.34, col: dc });
+        const a = rand() * Math.PI * 2;
+        this.parts.push({
+          x: p.x + Math.cos(a) * 26, y: p.y - 16 + Math.sin(a) * 14,
+          vx: Math.cos(a) * 32, vy: -28 - rand() * 34,
+          life: 0.45, max: 0.45, size: 3.2 + rand() * 2.2,
+          col: rand() < 0.3 ? ds : dc, grav: -18, kind: 2, drag: 0.94,
+        });
+      }
       if (p.danceT <= 0) { p.danceT = 0; this.recalc(); }
     }
     // регенерация
@@ -485,8 +513,10 @@ export class Game {
       this.damageProp(pr, s.dmg * 1.2);
     }
     if (p.danceT > 0) {
-      const sp = 440;
-      this.projs.push({ x: p.x, y: p.y, vx: Math.cos(aim) * sp, vy: Math.sin(aim) * sp, r: 16, dmg: s.dmg * 0.6, life: 0.55, from: 'p', kind: 'wave', pierce: 99, hit: [], col: '#ff4d7a', effect: 'none', crit: false, poison: false, slow: false, dead: false, src: 0 });
+      const sp = 510;
+      const dc = w.id === 'rusty' ? '#ff2e63' : w.c.glow;
+      this.fx.push({ kind: 'slash', x: p.x, y: p.y - 12, x2: 0, y2: 0, a: aim, r: range * 1.18, arc: arc * 1.15, side: -p.swingSide, t: 0, dur: 0.24, col: dc, big: true });
+      this.projs.push({ x: p.x, y: p.y, vx: Math.cos(aim) * sp, vy: Math.sin(aim) * sp, r: 22, dmg: s.dmg * 0.65, life: 0.62, from: 'p', kind: 'wave', pierce: 99, hit: [], col: dc, effect: w.effect, crit: false, poison: false, slow: false, dead: false, src: 0 });
     }
     if (hits > 0) { this.shake(fin ? 5 : 2.5); if (fin) this.hitstop = Math.max(this.hitstop, 0.04); } else sfx.slash();
   }
@@ -518,9 +548,12 @@ export class Game {
     if (p.skillCd[i] > 0 || p.dashT > 0) return;
     const cd = sk.cd * (1 - s.cdr);
     sfx.skill(i);
+    const skillPow = 1 + 0.10 * p.attrs.cdr;
     if (i === 0) {
-      p.skillCd[0] = cd; p.whirlT = 0.7; p.whirlTick = 0;
-      this.ring(p.x, p.y, 115, w.c.trail, 0.5);
+      p.skillCd[0] = cd; p.whirlT = 0.75; p.whirlTick = 0;
+      this.ring(p.x, p.y, 128, w.c.trail, 0.55);
+      this.ring(p.x, p.y, 85, '#ffffff', 0.35);
+      this.burst(p.x, p.y - 14, 22, w.c.glow, 180, 0.55, 4);
     } else if (i === 1) {
       p.skillCd[1] = cd;
       const t = this.nearestEnemy(p.x, p.y, 380);
@@ -532,35 +565,48 @@ export class Game {
         const px = tx + (p.x - tx) * (k / 12), py = ty + (p.y - ty) * (k / 12);
         if (!this.blockedBox(px, py, PR)) { nx = px; ny = py; break; }
       }
-      this.fx.push({ kind: 'beam', x: p.x, y: p.y - 12, x2: nx, y2: ny - 12, a: 0, r: 0, arc: 0, side: 1, t: 0, dur: 0.35, col: '#b57cff', big: false });
-      this.burst(p.x, p.y - 10, 18, '#7a4cc0', 120, 0.6, 5);
+      const sc1 = w.id === 'rusty' ? '#c084fc' : w.c.glow;
+      const sc2 = w.id === 'rusty' ? '#d8b4fe' : w.c.trail;
+      this.fx.push({ kind: 'beam', x: p.x, y: p.y - 16, x2: nx, y2: ny - 16, a: 0, r: 0, arc: 0, side: 1, t: 0, dur: 0.42, col: sc1, big: true });
+      this.ring(p.x, p.y, 72, sc2, 0.38);
+      this.burst(p.x, p.y - 12, 24, sc1, 140, 0.65, 5);
       p.x = nx; p.y = ny;
-      this.burst(p.x, p.y - 10, 22, '#b57cff', 160, 0.6, 5);
+      this.fx.push({ kind: 'pillar', x: p.x, y: p.y, x2: 0, y2: 0, a: 0, r: 58, arc: 0, side: 1, t: 0, dur: 0.42, col: sc1, big: true });
+      this.ring(p.x, p.y, 118, sc2, 0.48);
+      this.burst(p.x, p.y - 14, 32, sc1, 210, 0.65, 5);
       p.iframes = Math.max(p.iframes, 0.9); p.critCharges = 3;
-      this.ring(p.x, p.y, 100, '#b57cff', 0.4);
       for (const e of this.enemies) {
         if (e.dead || e.spawnT > 0) continue;
         const d = Math.hypot(e.x - p.x, e.y - p.y);
-        if (d < 100 + e.r) { const h = this.rollHit(2.4, true); this.hitEnemy(e, h.v, { crit: true, ang: Math.atan2(e.y - p.y, e.x - p.x), kb: 260, proc: true }); }
+        if (d < 110 + e.r) { const h = this.rollHit(2.4 * skillPow, true); this.hitEnemy(e, h.v, { crit: true, ang: Math.atan2(e.y - p.y, e.x - p.x), kb: 270, proc: true }); }
       }
-      this.shake(8);
-    } else {
-      p.skillCd[2] = cd; p.danceT = 7; this.recalc();
-      this.ring(p.x, p.y, 160, '#ff3a6a', 0.7);
-      this.burst(p.x, p.y - 14, 30, '#ff3a6a', 200, 0.8, 5);
       this.shake(9);
-      this.cb.onBanner('ТАНЕЦ СМЕРТИ', '', '#ff3a6a');
+    } else {
+      const dc = w.id === 'rusty' ? '#ff2e63' : w.c.glow;
+      const ds = w.id === 'rusty' ? '#ffd27a' : w.c.edge;
+      p.skillCd[2] = cd; p.danceT = 7 + 0.3 * p.attrs.cdr; this.recalc();
+      this.fx.push({ kind: 'pillar', x: p.x, y: p.y, x2: 0, y2: 0, a: 0, r: 74, arc: 0, side: 1, t: 0, dur: 0.55, col: dc, big: true });
+      this.ring(p.x, p.y, 185, dc, 0.75);
+      this.ring(p.x, p.y, 120, ds, 0.45);
+      this.burst(p.x, p.y - 16, 42, dc, 230, 0.85, 5);
+      this.shake(10);
+      this.cb.onBanner('ТАНЕЦ СМЕРТИ', '', dc);
     }
   }
 
   whirlHit() {
     const p = this.p, s = this.s, w = this.weapon();
-    const R = 112;
-    this.ring(p.x, p.y, R, w.c.trail, 0.25);
+    const R = 118;
+    const skillPow = 1 + 0.10 * p.attrs.cdr;
+    this.ring(p.x, p.y, R, w.c.trail, 0.28);
+    const spinA = p.anim * 16;
+    this.fx.push({ kind: 'slash', x: p.x, y: p.y - 16, x2: 0, y2: 0, a: spinA, r: R * 0.86, arc: 2.8, side: 1, t: 0, dur: 0.22, col: w.c.trail, big: true });
+    this.fx.push({ kind: 'slash', x: p.x, y: p.y - 16, x2: 0, y2: 0, a: spinA + Math.PI, r: R * 0.72, arc: 2.5, side: -1, t: 0, dur: 0.22, col: w.c.glow, big: false });
+    this.burst(p.x, p.y - 14, 7, w.c.glow, 160, 0.35, 3.2);
     for (const e of this.enemies) {
       if (e.dead || e.spawnT > 0) continue;
       const d = Math.hypot(e.x - p.x, e.y - p.y);
-      if (d < R + e.r) { const h = this.rollHit(0.8); this.hitEnemy(e, h.v, { crit: h.crit, ang: Math.atan2(e.y - p.y, e.x - p.x), kb: 230, proc: true }); }
+      if (d < R + e.r) { const h = this.rollHit(0.85 * skillPow); this.hitEnemy(e, h.v, { crit: h.crit, ang: Math.atan2(e.y - p.y, e.x - p.x), kb: 230, proc: true }); }
     }
     for (const pr of this.props) if (!pr.dead && pr.hp > 0 && Math.hypot(pr.x - p.x, pr.y - p.y) < R + pr.r) this.damageProp(pr, s.dmg);
     for (const pj of this.projs) if (pj.from === 'e' && Math.hypot(pj.x - p.x, pj.y - p.y) < R + 20) { pj.dead = true; this.burst(pj.x, pj.y - 12, 5, pj.col, 80, 0.3, 2); }
@@ -628,8 +674,7 @@ export class Game {
       sfx.levelup();
       this.fx.push({ kind: 'ring', x: p.x, y: p.y, x2: 0, y2: 0, a: 0, r: 88, arc: 0, side: 1, t: 0, dur: 0.55, col: '#ffd84a', big: false });
       this.burst(p.x, p.y - 14, 18, '#ffd84a', 150, 0.8, 2.6, -40);
-      this.text(p.x, p.y - 56, `УРОВЕНЬ ${p.level}!`, '#ffd84a', 1.5);
-      this.cb.onBanner(`Уровень ${p.level}`, '+2 очка характеристик', '#ffd84a');
+      this.text(p.x, p.y - 60, `УРОВЕНЬ ${p.level}!`, '#ffd84a', 1.85);
       const un = SKILLS.find((s) => s.unlock === p.level);
       if (un) this.cb.onToast(`Новый навык: ${un.name} [${un.key}]`, '#b57cff', 'sparkles');
       this.cb.onLevelUp();
@@ -867,7 +912,18 @@ export class Game {
       if (e.dead) continue;
       const dx = e.x - p.x, dy = e.y - p.y;
       if (Math.abs(dx) > 1300 || Math.abs(dy) > 1300) continue;
+      const px0 = e.x, py0 = e.y;
       this.updateEnemy(e, dt);
+      const mdx = e.x - px0, mdy = e.y - py0;
+      const md = Math.hypot(mdx, mdy);
+      if (md > 0.08 && e.mv > 0.05) {
+        const tx = mdx / md, ty = mdy / md;
+        e.mx = (e.mx ?? tx) * 0.72 + tx * 0.28;
+        e.my = (e.my ?? ty) * 0.72 + ty * 0.28;
+      } else {
+        e.mx = (e.mx ?? 0) * 0.82;
+        e.my = (e.my ?? 0) * 0.82;
+      }
     }
     // разделение
     const act: Enemy[] = [];

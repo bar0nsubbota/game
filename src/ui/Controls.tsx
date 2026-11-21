@@ -1,15 +1,27 @@
 import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as RPE, type ReactNode } from 'react';
 import {
-  FlaskConical, Gem, Ghost, Hand, KeyRound, Lock, Package, Skull, Store, Swords, Tornado, Wind,
+  Gem, Hand, KeyRound, Lock, Package, Skull, Store,
 } from 'lucide-react';
 import type { Game } from '../game/engine';
 import type { HudState } from '../game/types';
 import { SKILLS } from '../game/data';
+import { SKILL_ICONS } from './skillIcons';
 import { cn } from '../utils/cn';
 import { useWindowSize } from './common';
 
-const SKILL_ICON = [Tornado, Ghost, Skull];
-const SKILL_COL = ['#6ac8ff', '#b57cff', '#ff3a6a'];
+const SKILL_ART_KEY = ['whirl', 'shadow', 'dance'] as const;
+const SKILL_COL = ['#ff4d6d', '#b57cff', '#ff2e54'];
+
+function ArtIcon({ id, alt }: { id: string; alt: string }) {
+  return (
+    <img
+      src={SKILL_ICONS[id]}
+      alt={alt}
+      draggable={false}
+      className="pointer-events-none h-full w-full rounded-full object-cover"
+    />
+  );
+}
 
 function vibrate(ms = 8) {
   try { navigator.vibrate?.(ms); } catch { /* не поддерживается */ }
@@ -68,7 +80,7 @@ function RoundBtn(p: RB) {
         ...p.style,
       }}
     >
-      <div style={{ color: p.color }}>{p.children}</div>
+      <div className="flex h-full w-full items-center justify-center overflow-hidden rounded-full" style={{ color: p.color }}>{p.children}</div>
       {frac > 0 && <div className="pointer-events-none absolute inset-0 rounded-full" style={{ background: `conic-gradient(rgba(0,0,0,.76) ${frac * 360}deg, transparent 0)` }} />}
       {frac > 0 && (p.cd ?? 0) >= 1 && <span className="pointer-events-none absolute text-sm font-black text-white [text-shadow:0_1px_3px_#000]">{Math.ceil(p.cd ?? 0)}</span>}
       {p.locked && (
@@ -84,13 +96,16 @@ function RoundBtn(p: RB) {
 }
 
 // ---------------------------------------------------------------- джойстик
-function Joystick({ game, size }: { game: Game; size: number }) {
+function Joystick({ game, size, rotated }: { game: Game; size: number; rotated?: boolean }) {
   const zone = useRef<HTMLDivElement>(null);
   const [st, setSt] = useState<{ id: number; ox: number; oy: number; kx: number; ky: number } | null>(null);
   const R = size * 0.42;
   const kRad = size * 0.22;
   const rel = (e: RPE) => {
     const r = zone.current!.getBoundingClientRect();
+    if (rotated) {
+      return { x: e.clientY - r.top, y: r.right - e.clientX };
+    }
     return { x: e.clientX - r.left, y: e.clientY - r.top };
   };
   const down = (e: RPE) => {
@@ -151,8 +166,10 @@ const PROMPT_ICON: Record<string, typeof Package> = {
   chest: Package, ironchest: Package, mimic: Package, vault: KeyRound, shrine: Gem, sarcophagus: Skull, merchant: Store, locked: Lock,
 };
 
-export function Controls({ game, hud, touch }: { game: Game; hud: HudState; touch: boolean }) {
-  const { w, h } = useWindowSize();
+export function Controls({ game, hud, touch, rotated, viewSize }: { game: Game; hud: HudState; touch: boolean; rotated?: boolean; viewSize?: { w: number; h: number } }) {
+  const win = useWindowSize();
+  const w = viewSize ? viewSize.w : win.w;
+  const h = viewSize ? viewSize.h : win.h;
   const k = Math.max(0.76, Math.min(1.05, w / 390, h / (w > h ? 500 : 760)));
   const usableSkill = hud.skills;
 
@@ -161,19 +178,19 @@ export function Controls({ game, hud, touch }: { game: Game; hud: HudState; touc
     return (
       <div className="pointer-events-none absolute bottom-5 left-1/2 z-10 flex -translate-x-1/2 items-end gap-2.5">
         <RoundBtn size={S - 6} color="#ff6a8a" cd={hud.potionCd} max={1.2} keyHint="Q" count={String(hud.potions)} label="Зелье" onDown={() => game.trigger('potion')}>
-          <FlaskConical size={22} />
+          <ArtIcon id="potion" alt="Зелье" />
         </RoundBtn>
         <RoundBtn size={S - 6} color="#d8e0f0" cd={hud.dashCd} max={hud.dashMax} keyHint="␣" label="Рывок" onDown={() => game.trigger('dash')}>
-          <Wind size={22} />
+          <ArtIcon id="dash" alt="Рывок" />
         </RoundBtn>
         <div className="mx-1 h-8 w-px bg-amber-900/60" />
         {usableSkill.map((s, i) => {
-          const Icon = SKILL_ICON[i];
+          const artKey = SKILL_ART_KEY[i];
           const d = SKILLS[i];
           return (
             <div key={d.id} className="flex flex-col items-center gap-0.5">
               <RoundBtn size={S} color={SKILL_COL[i]} cd={s.cd} max={s.max} locked={!s.unlocked} lockText={`Ур.${d.unlock}`} active={s.active} keyHint={d.key} label={d.name} onDown={() => game.trigger(('skill' + i) as 'skill0')}>
-                <Icon size={S * 0.46} />
+                <ArtIcon id={artKey} alt={d.name} />
               </RoundBtn>
               <span className="text-[9px] font-semibold tracking-wide text-amber-200/70">{d.name.split(' ')[0]}</span>
             </div>
@@ -183,9 +200,9 @@ export function Controls({ game, hud, touch }: { game: Game; hud: HudState; touc
     );
   }
 
-  const A = Math.max(78, Math.round(88 * k));
-  const B = Math.max(46, Math.round(52 * k));
-  const P = Math.max(44, Math.round(49 * k));
+  const A = Math.max(86, Math.round(98 * k));
+  const B = Math.max(54, Math.round(60 * k));
+  const P = Math.max(50, Math.round(56 * k));
   const hasPrompt = !!hud.prompt;
   const actionMode = hasPrompt && !hud.danger;
   const showSmallAction = hasPrompt && hud.danger;
@@ -194,15 +211,15 @@ export function Controls({ game, hud, touch }: { game: Game; hud: HudState; touc
     right: `calc(env(safe-area-inset-right, 0px) + ${Math.round(right * k)}px)`,
     bottom: `calc(env(safe-area-inset-bottom, 0px) + ${Math.round(bottom * k)}px)`,
   });
-  const skillPositions: [number, number][] = [[124, 48], [104, 110], [57, 164]];
+  const skillPositions: [number, number][] = [[134, 42], [116, 114], [64, 174]];
 
   return (
     <div className="pointer-events-none absolute inset-0 z-10">
-      <Joystick game={game} size={Math.round(128 * k)} />
+      <Joystick game={game} size={Math.round(138 * k)} rotated={rotated} />
 
       {/* Навыки огибают кнопку атаки дугой, как на геймпаде в портретном режиме. */}
       {usableSkill.map((s, i) => {
-        const Icon = SKILL_ICON[i];
+        const artKey = SKILL_ART_KEY[i];
         const d = SKILLS[i];
         return (
           <RoundBtn
@@ -211,24 +228,24 @@ export function Controls({ game, hud, touch }: { game: Game; hud: HudState; touc
             className="absolute" style={anchor(...skillPositions[i])} label={d.name}
             onDown={() => { vibrate(6); game.trigger(('skill' + i) as 'skill0'); }}
           >
-            <Icon size={B * 0.46} />
+            <ArtIcon id={artKey} alt={d.name} />
           </RoundBtn>
         );
       })}
 
       <RoundBtn size={P} color="#ff6a8a" cd={hud.potionCd} max={1.2}
-        count={String(hud.potions)} className="absolute" style={anchor(6, 230)}
+        count={String(hud.potions)} className="absolute" style={anchor(8, 244)}
         label="Зелье здоровья" onDown={() => { vibrate(6); game.trigger('potion'); }}>
-        <FlaskConical size={P * 0.46} />
+        <ArtIcon id="potion" alt="Зелье" />
       </RoundBtn>
       <RoundBtn size={P} color="#d8e0f0" cd={hud.dashCd} max={hud.dashMax}
-        className="absolute" style={anchor(6, 125)}
+        className="absolute" style={anchor(8, 134)}
         label="Рывок" onDown={() => { vibrate(6); game.trigger('dash'); }}>
-        <Wind size={P * 0.46} />
+        <ArtIcon id="dash" alt="Рывок" />
       </RoundBtn>
       {showSmallAction && (
         <RoundBtn size={P} color="#ffd24a" pulse className="absolute"
-          style={anchor(118, 217)} label="Действие"
+          style={anchor(130, 232)} label="Действие"
           onDown={() => { vibrate(10); game.trigger('interact'); }}>
           <PromptIcon size={P * 0.46} />
         </RoundBtn>
@@ -244,11 +261,11 @@ export function Controls({ game, hud, touch }: { game: Game; hud: HudState; touc
         }}
         onUp={() => game.setAttackTouch(false)}
       >
-        {actionMode ? <Hand size={A * 0.44} /> : <Swords size={A * 0.44} />}
+        {actionMode ? <ArtIcon id="interact" alt="Действие" /> : <ArtIcon id="attack" alt="Атака" />}
       </RoundBtn>
       {hasPrompt && (
         <div className="fade-in pointer-events-none absolute flex max-w-[230px] items-center gap-1.5 rounded-lg border border-amber-500/80 bg-black/85 px-2 py-1 text-[11px] font-semibold leading-tight text-amber-100 shadow-[0_0_16px_rgba(0,0,0,0.8)]"
-          style={anchor(65, 285)}>
+          style={anchor(70, 306)}>
           <PromptIcon size={14} className="shrink-0 text-amber-300" />
           <span>{hud.prompt}</span>
         </div>

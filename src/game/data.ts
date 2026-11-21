@@ -133,11 +133,11 @@ export interface ArtifactInst {
 export type AttrKey = 'dmg' | 'atk' | 'hp' | 'move' | 'crit' | 'cdr';
 export const ATTRS: { key: AttrKey; name: string; desc: string }[] = [
   { key: 'dmg', name: 'Сила клинков', desc: '+12% к урону' },
-  { key: 'atk', name: 'Скорость атаки', desc: '+9% к скорости атаки' },
-  { key: 'hp', name: 'Живучесть', desc: '+16 к макс. здоровью' },
-  { key: 'move', name: 'Проворство', desc: '+5% к скорости бега' },
-  { key: 'crit', name: 'Точность убийцы', desc: '+3% к шансу крита' },
-  { key: 'cdr', name: 'Мастерство теней', desc: '−4% к перезарядке навыков' },
+  { key: 'atk', name: 'Скорость атаки', desc: '+10% к скорости атаки' },
+  { key: 'hp', name: 'Живучесть', desc: '+22 к макс. HP и +0.5 регена/с' },
+  { key: 'move', name: 'Проворство', desc: '+6% к бегу и +2.5% уклонения' },
+  { key: 'crit', name: 'Точность убийцы', desc: '+4% шанса и +10% крит. урона' },
+  { key: 'cdr', name: 'Мастерство теней', desc: '−8% к КД навыков/рывка и +10% силы скиллов' },
 ];
 
 export interface SkillDef { id: string; name: string; desc: string; key: string; cd: number; unlock: number }

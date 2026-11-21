@@ -23,6 +23,7 @@ export interface Enemy {
   t: number; cd: number;
   face: 1 | -1;
   aim: number;
+  mx?: number; my?: number;
   hx: number; hy: number;
   los: boolean; losT: number;
   flash: number; anim: number; mv: number; wind: number; swing: number;

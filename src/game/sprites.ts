@@ -1,4 +1,6 @@
 import { RARITY, type WeaponDef } from './data';
+import { getPlayerSprites, getWeaponTintedFrame } from './playerSprites';
+import { getWorldSprites } from './worldSprites';
 import type { Critter, Decal, Enemy, Pickup, PlayerState, Prop, Proj } from './types';
 
 type C = CanvasRenderingContext2D;
@@ -131,116 +133,324 @@ export function drawWeaponIcon(c: C, w: WeaponDef, size: number) {
 
 // ---------------------------------------------------------------- игрок
 export function drawPlayer(c: C, p: PlayerState, w: WeaponDef, alpha = 1) {
+  const bank = getPlayerSprites();
   const t = p.anim;
   const mv = p.moving ? 1 : 0;
-  const run = Math.sin(t * 14) * mv;
-  // дыхание покоя + бег
-  const breathe = Math.sin(t * 2.2) * 0.6 * (1 - mv);
-  const bob = Math.abs(Math.sin(t * 14)) * 1.7 * mv + breathe;
   const col = w.c;
+  const whirl = p.whirlT > 0;
+  const dashing = p.dashT > 0;
+  const attacking = p.swing > 0 && !whirl;
+
+  // Определяем 8-направленный ракурс по углу p.lastDir (-PI..PI)
+  const dir = Math.atan2(Math.sin(p.lastDir), Math.cos(p.lastDir));
+  const absDir = Math.abs(dir);
+  let view: 'up' | 'down' | 'upDiag' | 'downDiag' | 'side' = 'side';
+  let flipX: 1 | -1 = p.face;
+
+  if (mv && !attacking && !dashing && !whirl) {
+    if (dir < -Math.PI * 0.38 && dir > -Math.PI * 0.62) {
+      view = 'up';
+      flipX = p.face;
+    } else if (dir > Math.PI * 0.38 && dir < Math.PI * 0.62) {
+      view = 'down';
+      flipX = p.face;
+    } else if (dir < -Math.PI * 0.14 && dir > -Math.PI * 0.86) {
+      view = 'upDiag';
+      flipX = Math.cos(dir) >= 0 ? 1 : -1;
+    } else if (dir > Math.PI * 0.14 && dir < Math.PI * 0.86) {
+      view = 'downDiag';
+      flipX = Math.cos(dir) >= 0 ? 1 : -1;
+    } else {
+      view = 'side';
+      flipX = absDir < Math.PI * 0.5 ? 1 : -1;
+    }
+  }
+
   c.save();
   c.globalAlpha = alpha;
-  c.scale(p.face, 1);
-  const sw = Math.sin(t * 6) * 1.5 + mv * 5;
-  const flap = Math.sin(t * 9) * mv * 2 + Math.sin(t * 1.8) * (1 - mv);
 
-  // --- развевающийся рваный плащ (сзади) с рваной кромкой ---
-  c.beginPath();
-  c.moveTo(-1, -28 - bob);
-  c.bezierCurveTo(-10 - sw, -23 - bob, -13 - sw - mv * 4, -11, -12 - sw * 1.4 - mv * 5, -1 + flap);
-  // рваный низ плаща
-  c.lineTo(-9 - sw * 0.7, -4 + flap * 0.5); c.lineTo(-7 - sw * 0.5, -6); c.lineTo(-4.5, -3.5);
-  c.lineTo(-2.5, -6); c.lineTo(-0.5, -3); c.lineTo(1, -13); c.closePath();
-  c.fillStyle = vgrad(c, -28, -2, '#2a2038', '#120c1c'); c.fill();
-  c.lineWidth = 1.1; c.strokeStyle = OUT; c.stroke();
-  // внутренняя подкладка плаща
-  c.save(); c.globalAlpha = alpha * 0.5;
-  poly(c, [-1, -26 - bob, -7 - sw, -12, -5 - sw, -4, -1, -11], '#3a1420', false);
-  c.restore();
-
-  // углы клинков
-  const conv = (a: number) => (p.face === 1 ? a : Math.PI - a);
-  let aF = 0.75, aB = 2.35;
-  const whirl = p.whirlT > 0;
-  if (p.swing > 0 && !whirl) {
-    const u = 1 - p.swing;
-    const e = easeOut(clamp(u * 1.15, 0, 1));
-    const blend = clamp(p.swing * 3, 0, 1);
-    const A = 1.3;
-    const wf = conv(p.swingAim + p.swingSide * A * (2 * e - 1));
-    const wb = conv(p.swingAim - p.swingSide * A * (2 * e - 1) * 0.8 + 0.25);
-    aF = lerp(aF, wf, blend); aB = lerp(aB, wb, blend);
-  }
-  const sF = { x: 3, y: -24 - bob }, sB = { x: -3, y: -24 - bob };
-  const drawArm = (s: { x: number; y: number }, a: number, len: number, front: boolean) => {
-    const ex = s.x + Math.cos(a) * 4, ey = s.y + Math.sin(a) * 4 + 1; // локоть
-    const hx = s.x + Math.cos(a) * 8, hy = s.y + Math.sin(a) * 8 + 2; // кисть
-    limb(c, s.x, s.y, ex, ey, 4.2, front ? '#342a46' : '#271f36');
-    limb(c, ex, ey, hx, hy, 3.4, front ? '#2a2238' : '#201a2c');
-    // наруч с ремнями
-    c.save(); c.translate((s.x + hx) / 2, (s.y + hy) / 2); c.rotate(a);
-    rr(c, -3, -2.6, 6, 5.2, 1.4, '#43372a', false);
-    c.strokeStyle = '#1c150f'; c.lineWidth = 0.8; c.beginPath(); c.moveTo(-2, -2.4); c.lineTo(-2, 2.4); c.moveTo(1, -2.4); c.lineTo(1, 2.4); c.stroke();
-    c.restore();
-    c.save(); c.translate(hx, hy); c.rotate(a); drawBlade(c, w, len); c.restore();
-    ell(c, hx, hy, 2.1, 2.1, '#14101c', false);
-  };
+  // --- СКИЛЛ: ВИХРЬ КЛИНКОВ (HD Chibi Blade Cyclone VFX) ---
   if (whirl) {
-    const a0 = t * 20;
-    for (let i = 0; i < 2; i++) {
-      c.save(); c.translate(0, -18); c.rotate(a0 + i * Math.PI); c.translate(8, 0); drawBlade(c, w, 30); c.restore();
+    c.save();
+    c.globalCompositeOperation = 'lighter';
+    const wMain = w.id === 'rusty' ? '#38bdf8' : (col.glow || '#38bdf8');
+    const wSec = w.id === 'rusty' ? '#cbd5e1' : (col.trail || '#ff4d7a');
+    // 1. Вращающееся вихревое кольцо на земле в палитре клинка
+    c.save();
+    c.scale(1, 0.52);
+    c.rotate(t * 14);
+    const cg = c.createRadialGradient(0, 0, 12, 0, 0, 74);
+    cg.addColorStop(0, wMain + '00');
+    cg.addColorStop(0.55, wMain + '48');
+    cg.addColorStop(0.85, wSec + '55');
+    cg.addColorStop(1, wSec + '00');
+    c.fillStyle = cg;
+    c.beginPath(); c.arc(0, 0, 74, 0, TAU); c.fill();
+    c.restore();
+
+    // 2. Три скоростные дуги ветра и стали в цвет надетого клинка
+    for (let ring = 0; ring < 3; ring++) {
+      const aStart = t * (16 + ring * 3.5) + ring * 2.1;
+      const radX = 36 + ring * 14;
+      const radY = (36 + ring * 14) * 0.54;
+      c.strokeStyle = ring === 0 ? '#ffffff' : ring === 1 ? wMain : wSec;
+      c.lineWidth = ring === 0 ? 3.2 : ring === 1 ? 5.5 : 4.2;
+      c.lineCap = 'round';
+      c.globalAlpha = (ring === 0 ? 0.92 : 0.76) * alpha;
+      c.beginPath();
+      for (let st = 0; st <= 14; st++) {
+        const a = aStart + st * 0.22;
+        const rx = Math.cos(a) * radX;
+        const ry = -18 + Math.sin(a) * radY;
+        if (st === 0) c.moveTo(rx, ry); else c.lineTo(rx, ry);
+      }
+      c.stroke();
     }
-  } else drawArm(sB, aB, 24, false);
 
-  // --- ноги с сапогами и наколенниками ---
-  const lf = -3 + run * 5.5, lb = 3 - run * 5.5;
-  limb(c, -2.5, -11 - bob, lf, -3 - Math.max(0, -run) * 3, 4.6, '#191320');
-  limb(c, 3, -11 - bob, lb, -3 - Math.max(0, run) * 3, 4.6, '#221a2e');
-  // сапоги
-  poly(c, [lf - 3.4, -3.4 - Math.max(0, -run) * 3, lf + 3.6, -3.4 - Math.max(0, -run) * 3, lf + 4.4, -0.4 - Math.max(0, -run) * 3, lf - 3.6, -0.4 - Math.max(0, -run) * 3], '#0d0a12');
-  poly(c, [lb - 3.4, -3.4 - Math.max(0, run) * 3, lb + 3.6, -3.4 - Math.max(0, run) * 3, lb + 4.4, -0.4 - Math.max(0, run) * 3, lb - 3.6, -0.4 - Math.max(0, run) * 3], '#100c16');
+    // 3. Четыре стремительно вращающихся энергетических клинка в стиле оружия
+    for (let bi = 0; bi < 4; bi++) {
+      const ba = t * 18 + (bi * TAU) / 4;
+      const bx = Math.cos(ba) * 52;
+      const by = -18 + Math.sin(ba) * 26;
+      c.save();
+      c.translate(bx, by);
+      c.rotate(ba + Math.PI * 0.5);
+      c.globalAlpha = 0.95 * alpha;
+      c.fillStyle = bi % 2 === 0 ? wMain : wSec;
+      c.beginPath();
+      c.moveTo(0, -14); c.quadraticCurveTo(6, -2, 0, 10); c.quadraticCurveTo(-5, -2, 0, -14);
+      c.closePath(); c.fill();
+      c.fillStyle = '#ffffff';
+      c.beginPath();
+      c.moveTo(0, -11); c.lineTo(2, 1); c.lineTo(0, 6); c.lineTo(-2, 1);
+      c.closePath(); c.fill();
+      c.restore();
+    }
+    c.restore();
+  }
 
-  // --- торс: слоистая кожаная броня ---
-  c.beginPath(); c.roundRect(-6.4, -29 - bob, 12.8, 18, 3.2);
-  c.fillStyle = vgrad(c, -29 - bob, -11 - bob, '#352c46', '#1e1830'); c.fill();
-  c.lineWidth = 1.1; c.strokeStyle = OUT; c.stroke();
-  // нагрудные пластины
-  poly(c, [-5.4, -27 - bob, 5.4, -27 - bob, 4.2, -20 - bob, -4.2, -20 - bob], '#3f3452', false);
-  sheen(c, -2.5, -25 - bob, 2.2, 3.4, -0.3, 0.12);
-  // кожаные ремни крест-накрест
-  c.strokeStyle = '#43372a'; c.lineWidth = 2.2; c.lineCap = 'round';
-  c.beginPath(); c.moveTo(-5, -27 - bob); c.lineTo(5, -14 - bob); c.moveTo(5, -27 - bob); c.lineTo(-5, -14 - bob); c.stroke();
-  c.strokeStyle = '#2a2018'; c.lineWidth = 0.7;
-  c.beginPath(); c.moveTo(-5, -27 - bob); c.lineTo(5, -14 - bob); c.moveTo(5, -27 - bob); c.lineTo(-5, -14 - bob); c.stroke();
-  // пояс с золотой пряжкой
-  rr(c, -6.6, -15 - bob, 13.2, 3.6, 1, '#2a1c14');
-  rr(c, -1.6, -15.2 - bob, 3.2, 4, 0.8, '#d8ad4e', false);
-  ell(c, 0, -13.3 - bob, 0.9, 0.9, '#5a3a14', false);
+  // --- СКИЛЛ: ТАНЕЦ СМЕРТИ (HD Ultimate VFX) ---
+  if (p.danceT > 0) {
+    const pulse = 0.88 + Math.sin(t * 11) * 0.12;
+    const dMain = w.id === 'rusty' ? '#ff2e63' : (col.glow || '#ff2e63');
+    const dSec = w.id === 'rusty' ? '#ffd27a' : (col.edge || '#ffd27a');
+    // 1. Двойная вращающаяся руническая печать в стихии надетого клинка
+    c.save();
+    c.scale(1, 0.50);
+    c.globalCompositeOperation = 'lighter';
+    const sg = c.createRadialGradient(0, 0, 6, 0, 0, 46);
+    sg.addColorStop(0, dMain + '58');
+    sg.addColorStop(0.65, dMain + '28');
+    sg.addColorStop(1, dMain + '00');
+    c.fillStyle = sg;
+    c.beginPath(); c.arc(0, 0, 46 * pulse, 0, TAU); c.fill();
 
-  // --- шарф-воротник из рваной ткани ---
-  poly(c, [-5.8, -30 - bob, 5.8, -30 - bob, 5, -25.5 - bob, -5, -25.5 - bob], '#a8243a');
-  poly(c, [-4, -28.5 - bob, -13 - mv * 5 - sw, -25 + Math.sin(t * 8) * 2 - bob, -19 - mv * 6 - sw, -19 + Math.sin(t * 8 + 1) * 2 - bob, -11 - sw, -22 - bob, -7, -24 - bob], '#8d1d2f');
-  poly(c, [-6, -27 - bob, -11 - sw, -24 - bob, -9 - sw, -21 - bob, -6, -24 - bob], '#6a1522', false);
+    c.save();
+    c.rotate(t * 3.1);
+    c.strokeStyle = dMain;
+    c.globalAlpha = 0.9 * alpha;
+    c.lineWidth = 2.6;
+    c.beginPath(); c.arc(0, 0, 38, 0, TAU); c.stroke();
+    c.strokeStyle = dSec;
+    c.globalAlpha = 0.78 * alpha;
+    c.lineWidth = 1.4;
+    c.setLineDash([8, 6]);
+    c.beginPath(); c.arc(0, 0, 31, 0, TAU); c.stroke();
+    c.setLineDash([]);
+    c.strokeStyle = dMain;
+    c.globalAlpha = 0.55 * alpha;
+    c.lineWidth = 1.3;
+    for (let k = 0; k < 2; k++) {
+      c.beginPath();
+      for (let i = 0; i < 3; i++) {
+        const a = (i / 3) * TAU + k * (Math.PI / 3);
+        const rx = Math.cos(a) * 35, ry = Math.sin(a) * 35;
+        if (i === 0) c.moveTo(rx, ry); else c.lineTo(rx, ry);
+      }
+      c.closePath(); c.stroke();
+    }
+    c.restore();
+    c.restore();
 
-  // --- голова в капюшоне с острым силуэтом ---
-  poly(c, [-5.5, -40 - bob, -11.5, -33.5 - bob, -6.5, -29.5 - bob, -2, -35 - bob], '#201829'); // задний клин капюшона
-  c.beginPath();
-  c.moveTo(-5.5, -32 - bob);
-  c.quadraticCurveTo(-6.5, -41.5 - bob, 1.5, -42 - bob);
-  c.quadraticCurveTo(8.5, -41 - bob, 8, -33 - bob);
-  c.quadraticCurveTo(5, -30 - bob, -2, -31 - bob);
-  c.closePath();
-  c.fillStyle = vgrad(c, -42 - bob, -30 - bob, '#322746', '#191223'); c.fill();
-  c.lineWidth = 1.1; c.strokeStyle = OUT; c.stroke();
-  // тень лица внутри капюшона
-  ell(c, 3, -33.6 - bob, 4.3, 4.6, '#06040a', false);
-  // светящиеся глаза
-  glowEye(c, 2.7, -34 - bob, 1.25, col.glow);
-  glowEye(c, 6.1, -34 - bob, 1.25, col.glow);
-  // блик на капюшоне
-  sheen(c, -1.5, -39 - bob, 3.2, 1.5, -0.4, 0.14);
+    // 2. Пылающие призрачные крылья в цвете оружия
+    c.save();
+    c.globalCompositeOperation = 'lighter';
+    for (const sgn of [-1, 1]) {
+      const flap = Math.sin(t * 15 + sgn * 0.7) * 6;
+      const wg = c.createLinearGradient(0, -34, sgn * 42, -16 + flap);
+      wg.addColorStop(0, dSec + 'bb');
+      wg.addColorStop(0.45, dMain + '99');
+      wg.addColorStop(1, dMain + '00');
+      c.fillStyle = wg;
+      c.beginPath();
+      c.moveTo(0, -26);
+      c.quadraticCurveTo(sgn * 24, -52 + flap, sgn * 44, -22 + flap);
+      c.quadraticCurveTo(sgn * 28, -20 + flap * 0.4, sgn * 36, -8 + flap * 0.5);
+      c.quadraticCurveTo(sgn * 18, -14, 0, -18);
+      c.closePath();
+      c.fill();
+    }
+    c.restore();
 
-  if (!whirl) drawArm(sF, aF, 26, true);
+    // 3. Три вращающихся призрачных клинка в стиле надетого оружия
+    c.save();
+    c.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 3; i++) {
+      const ang = t * 6.8 + (i * TAU) / 3;
+      const ox = Math.cos(ang) * 38;
+      const oy = -20 + Math.sin(ang) * 18;
+      c.strokeStyle = i % 2 === 0 ? dMain : dSec;
+      c.globalAlpha = 0.72 * alpha;
+      c.lineWidth = 3.2;
+      c.lineCap = 'round';
+      c.beginPath();
+      for (let sIdx = 0; sIdx <= 8; sIdx++) {
+        const ta = ang - sIdx * 0.13;
+        const tx = Math.cos(ta) * 38;
+        const ty = -20 + Math.sin(ta) * 18;
+        if (sIdx === 0) c.moveTo(tx, ty); else c.lineTo(tx, ty);
+      }
+      c.stroke();
+      c.save();
+      c.translate(ox, oy);
+      c.rotate(ang + Math.PI * 0.5);
+      c.globalAlpha = 0.95 * alpha;
+      c.fillStyle = dMain;
+      c.beginPath();
+      c.moveTo(0, -11); c.lineTo(3.6, 2); c.lineTo(0, 7); c.lineTo(-3.6, 2); c.closePath();
+      c.fill();
+      c.fillStyle = '#fff5d6';
+      c.beginPath();
+      c.moveTo(0, -9); c.lineTo(1.6, 1.5); c.lineTo(0, 4); c.lineTo(-1.6, 1.5); c.closePath();
+      c.fill();
+      c.restore();
+    }
+    c.restore();
+  }
+
+  c.scale(flipX, 1);
+
+  if (bank.ready) {
+    let img: HTMLImageElement = bank.idle;
+    let frameKey = 'idle';
+    let ox = 0;
+    let oy = 0;
+    let sx = 1;
+    let sy = 1;
+    let rot = 0;
+
+    if (whirl) {
+      const wi = Math.floor(t * 18) % 2;
+      img = wi === 0 ? bank.atk1 : bank.atk2;
+      frameKey = wi === 0 ? 'atk1' : 'atk2';
+      sx = 1.1; sy = 0.92; oy = -2;
+    } else if (dashing) {
+      img = bank.dash;
+      frameKey = 'dash';
+      sx = 1.16; sy = 0.90; ox = 4;
+    } else if (attacking) {
+      const u = 1 - p.swing;
+      const lunge = Math.sin(clamp(u, 0, 1) * Math.PI);
+      img = p.swingSide > 0 ? bank.atk1 : bank.atk2;
+      frameKey = p.swingSide > 0 ? 'atk1' : 'atk2';
+      ox = lunge * 7.5;
+      oy = -lunge * 1.5;
+      sx = 1 + lunge * 0.10;
+      sy = 1 - lunge * 0.06;
+      rot = lunge * (p.swingSide > 0 ? 0.08 : -0.07);
+    } else if (mv) {
+      if (view === 'up') {
+        const fi = Math.floor(t * 10) % bank.up.length;
+        img = bank.up[fi];
+        frameKey = 'up' + fi;
+        oy = (fi === 1 || fi === 3) ? -1.4 : 0;
+        rot = (fi === 0 ? -0.018 : fi === 2 ? 0.018 : 0);
+      } else if (view === 'down') {
+        const fi = Math.floor(t * 10) % bank.down.length;
+        img = bank.down[fi];
+        frameKey = 'down' + fi;
+        oy = (fi === 1 || fi === 3) ? -1.4 : 0;
+        rot = (fi === 0 ? -0.016 : fi === 2 ? 0.016 : 0);
+      } else if (view === 'upDiag') {
+        const fi = Math.floor(t * 11) % bank.upDiag.length;
+        img = bank.upDiag[fi];
+        frameKey = `upDiag${fi}`;
+        oy = -Math.abs(Math.sin(t * 11 * Math.PI * 0.5)) * 1.8;
+      } else if (view === 'downDiag') {
+        const fi = Math.floor(t * 11) % bank.downDiag.length;
+        img = bank.downDiag[fi];
+        frameKey = `downDiag${fi}`;
+        oy = -Math.abs(Math.sin(t * 11 * Math.PI * 0.5)) * 1.8;
+      } else {
+        const fi = Math.floor(t * 11) % bank.run.length;
+        img = bank.run[fi];
+        frameKey = `run${fi}`;
+        oy = -Math.abs(Math.sin(t * 11 * Math.PI * 0.5)) * 1.6;
+        rot = 0.03;
+      }
+    } else {
+      img = bank.idle;
+      frameKey = 'idle';
+      const br = Math.sin(t * 2.8);
+      sy = 1 + br * 0.025;
+      sx = 1 - br * 0.012;
+    }
+
+    if (p.hurt > 0) { sx *= 0.92; sy *= 1.08; }
+
+    // Попиксельно перекрашиваем НАСТОЯЩИЕ клинки в руках ассасина под выбранное оружие!
+    const drawImg = getWeaponTintedFrame(img, frameKey, w);
+
+    const size = 88;
+    c.save();
+    c.translate(ox, oy);
+    c.rotate(rot);
+    c.scale(sx, sy);
+    c.imageSmoothingEnabled = true;
+    c.drawImage(drawImg, -size * 0.5, -size + 7, size, size);
+    c.restore();
+
+    // --- СКИЛЛ: ВИХРЬ КЛИНКОВ (360° неоновый торнадо-вихрь) ---
+    if (whirl) {
+      const a0 = t * 24;
+      c.save();
+      c.translate(0, -20);
+      c.globalCompositeOperation = 'lighter';
+      for (let rIdx = 0; rIdx < 3; rIdx++) {
+        const rad = 28 + rIdx * 15;
+        const ang = a0 * (rIdx % 2 === 0 ? 1 : -1.2) + rIdx * 1.4;
+        c.strokeStyle = rIdx === 1 ? '#ffffff' : col.glow;
+        c.globalAlpha = (0.78 - rIdx * 0.18) * alpha;
+        c.lineWidth = 7.5 - rIdx * 1.8;
+        c.lineCap = 'round';
+        c.beginPath(); c.arc(0, 0, rad, ang, ang + 2.2); c.stroke();
+        c.beginPath(); c.arc(0, 0, rad, ang + Math.PI, ang + Math.PI + 2.2); c.stroke();
+      }
+      c.restore();
+    }
+
+    // --- СКИЛЛ: ТЕНЕВОЙ ШАГ — орбитирующие фиолетово-золотые заряды крита ---
+    if (p.critCharges > 0) {
+      c.save();
+      c.globalCompositeOperation = 'lighter';
+      for (let i = 0; i < p.critCharges; i++) {
+        const ang = t * 5.2 + (i / p.critCharges) * TAU;
+        const cx = Math.cos(ang) * 26;
+        const cy = -24 + Math.sin(ang) * 11;
+        c.drawImage(getGfxGlow(w.id === 'rusty' ? '#c084fc' : col.glow), cx - 12, cy - 12, 24, 24);
+        c.fillStyle = '#fef08a';
+        c.beginPath();
+        c.moveTo(cx, cy - 5); c.lineTo(cx + 3.5, cy); c.lineTo(cx, cy + 5); c.lineTo(cx - 3.5, cy);
+        c.closePath(); c.fill();
+      }
+      c.restore();
+    }
+
+    c.restore();
+    return;
+  }
+
+  ell(c, 0, -20, 10, 18, '#261e36');
   c.restore();
 }
 
@@ -903,11 +1113,78 @@ export function drawEnemy(c: C, e: Enemy) {
     c.beginPath(); c.arc(0, 0, shR * 1.55, 0, TAU); c.stroke();
     c.setLineDash([]); c.restore();
   }
+  const wbank = getWorldSprites();
+  const spriteImg = wbank.enemies[def.kind];
+  const ENEMY_DRAW_SIZE: Record<string, number> = {
+    bat: 44, goblin: 48, goblinArcher: 48, spider: 48, webSpider: 52,
+    skeleton: 56, skelArcher: 56, necro: 62, orc: 64, shaman: 64,
+    ogre: 82, wraith: 64, mimic: 56, boss: 144,
+  };
   const body = (ctx: C, ox: number, oy: number) => {
     ctx.save(); ctx.translate(ox, oy + (e.spawnT > 0 ? e.spawnT * 14 : 0));
     if (e.spawnT > 0) ctx.globalAlpha = clamp(1 - e.spawnT, 0.1, 1);
     ctx.scale(e.face * sc, sc);
-    fn(ctx, e, a);
+    if (spriteImg && spriteImg.complete && spriteImg.naturalWidth > 0) {
+      const sz = ENEMY_DRAW_SIZE[def.kind] || 56;
+      const hover = def.flying ? -10 + Math.sin(a.t * 6.5 + e.id) * 4.5 : 0;
+      const stride = a.mv > 0.05 ? Math.sin(a.t * (9 + e.speed / 20)) : 0;
+      const breathe = Math.sin(a.t * 3 + e.id) * 0.025;
+      let sx = 1 + stride * 0.055 - breathe * 0.5;
+      let sy = 1 - stride * 0.065 + breathe;
+      let rot = stride * 0.05;
+      let lx = 0;
+      let ly = a.bob + hover;
+
+      // Замах (windup) — враг приподнимается и сжимается перед ударом
+      if (a.wind > 0) {
+        const wEase = easeOut(a.wind);
+        sx *= 1 - wEase * 0.10;
+        sy *= 1 + wEase * 0.14;
+        rot -= wEase * 0.14;
+        lx -= wEase * 4;
+      } else if (a.sw > 0) {
+        // Удар (strike) — резкий выпад вперёд
+        sx *= 1 + a.sw * 0.16;
+        sy *= 1 - a.sw * 0.10;
+        rot += a.sw * 0.18;
+        lx += a.sw * 8;
+      }
+
+      // Аура фазы 2/3 у Босса
+      if (e.boss && e.phase >= 2) {
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = 0.25 + Math.sin(a.t * 8) * 0.1;
+        const bg = ctx.createRadialGradient(0, -sz * 0.45, 6, 0, -sz * 0.45, sz * 0.6);
+        bg.addColorStop(0, e.phase >= 3 ? '#c084fc' : '#ff3a5a');
+        bg.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = bg;
+        ctx.beginPath(); ctx.arc(0, -sz * 0.45, sz * 0.6, 0, TAU); ctx.fill();
+        ctx.restore();
+      }
+
+      // Диагональное и 8-направленное движение врагов (наклон корпуса, перспектива и шаг по диагонали)
+      const emx = e.mx || 0;
+      const emy = e.my || 0;
+      const diagMag = Math.min(1, Math.abs(emx) * Math.abs(emy) * 2.4);
+      const localMx = emx * e.face; // > 0 когда идёт вперёд по взгляду
+      const diagSkewX = a.mv > 0.05 ? (emy * 0.13 + localMx * 0.05) * (0.65 + diagMag * 0.55) : 0;
+      const diagSkewY = a.mv > 0.05 ? (emy * 0.09) * diagMag : 0;
+      const depthScale = a.mv > 0.05 ? 1 + emy * 0.045 : 1;
+      const diagStepX = a.mv > 0.05 ? stride * localMx * 1.6 : 0;
+      const diagStepY = a.mv > 0.05 ? stride * emy * 1.4 : 0;
+
+      ctx.translate(lx + diagStepX, ly + diagStepY);
+      ctx.rotate(rot + (a.mv > 0.05 ? emy * 0.055 * (0.5 + diagMag * 0.5) : 0));
+      if (Math.abs(diagSkewX) > 0.004 || Math.abs(diagSkewY) > 0.004) {
+        ctx.transform(1, diagSkewY, diagSkewX, 1, 0, 0);
+      }
+      ctx.scale(sx * depthScale, sy * (1 - Math.abs(emy) * 0.035));
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(spriteImg, -sz * 0.5, -sz + 6, sz, sz);
+    } else {
+      fn(ctx, e, a);
+    }
     ctx.restore();
   };
   const frozen = e.st.freezeT > 0;
@@ -1172,19 +1449,111 @@ function cocoon(c: C, p: Prop, t: number) {
 }
 
 export function drawProp(c: C, p: Prop, t: number) {
+  const wb = getWorldSprites().props;
+  const ok = (k: string) => wb[k] && wb[k].complete && wb[k].naturalWidth > 0;
   c.save();
   c.translate(p.x + (p.hit > 0 ? Math.sin(p.hit * 90) * 2 * Math.min(1, p.hit * 6) : 0), p.y);
+  // Плотная двухслойная контактная тень под основанием (чтобы объекты стояли на земле, а не парили)
+  const groundShadow = (rx: number, ry: number) => {
+    shadow(c, 2, 1.5, rx * 1.12, ry * 1.15, 0.32);
+    shadow(c, 0, 0, rx * 0.92, ry * 0.78, 0.62);
+  };
   switch (p.kind) {
-    case 'barrel': barrel(c, p, false, t); break;
-    case 'bomb': barrel(c, p, true, t); break;
-    case 'crate': shadow(c, 0, 0, 0, 0, 0); crate(c); break;
-    case 'chest': case 'ironchest': case 'vault': case 'mimic': chestDraw(c, p, t, p.kind === 'mimic' ? 'chest' : p.kind); break;
-    case 'shrine': shrine(c, p, t); break;
+    case 'barrel':
+      if (ok('barrel')) {
+        groundShadow(15, 5.5);
+        c.drawImage(wb.barrel, -20, -34, 40, 40);
+      } else barrel(c, p, false, t);
+      break;
+    case 'bomb':
+      if (ok('barrel')) {
+        groundShadow(15, 5.5);
+        c.drawImage(wb.barrel, -20, -34, 40, 40);
+        // Красная взрывная метка и горящий фитиль
+        c.save(); c.globalCompositeOperation = 'lighter'; c.globalAlpha = 0.4 + Math.sin(t * 10) * 0.2;
+        c.drawImage(getGfxGlow('#ff3a22'), -18, -29, 36, 36); c.restore();
+        flame(c, 2, -30, 3.2, 10, t, p.seed, '#ff5a1a', '#fff0a0');
+      } else barrel(c, p, true, t);
+      break;
+    case 'crate':
+      if (ok('crate')) {
+        groundShadow(16.5, 6);
+        c.drawImage(wb.crate, -21, -35, 42, 42);
+      } else { shadow(c, 0, 0, 0, 0, 0); crate(c); }
+      break;
+    case 'chest': case 'ironchest': case 'vault': case 'mimic': {
+      const opened = p.state > 0;
+      const key = p.kind === 'vault'
+        ? (opened ? 'vault_open' : 'vault_closed')
+        : p.kind === 'ironchest'
+          ? (opened ? 'ironchest_open' : 'ironchest_closed')
+          : (opened ? 'chest_open' : 'chest_closed');
+      if (ok(key)) {
+        const sz = p.kind === 'vault' ? 60 : p.kind === 'ironchest' ? 52 : 48;
+        groundShadow(sz * 0.39, sz * 0.14);
+        if (!opened && p.kind === 'vault') {
+          c.save(); c.globalCompositeOperation = 'lighter'; c.globalAlpha = 0.38 + Math.sin(t * 4.5 + p.seed) * 0.14;
+          c.drawImage(getGfxGlow('#ffd24a'), -sz * 0.7, -sz * 0.92, sz * 1.4, sz * 1.4); c.restore();
+        } else if (!opened && p.kind === 'ironchest') {
+          c.save(); c.globalCompositeOperation = 'lighter'; c.globalAlpha = 0.22 + Math.sin(t * 3.5 + p.seed) * 0.08;
+          c.drawImage(getGfxGlow('#7dd3fc'), -sz * 0.55, -sz * 0.8, sz * 1.1, sz * 1.1); c.restore();
+        } else if (!opened && p.kind === 'chest') {
+          c.save(); c.globalCompositeOperation = 'lighter'; c.globalAlpha = 0.20 + Math.sin(t * 4 + p.seed) * 0.08;
+          c.drawImage(getGfxGlow('#ffd24a'), -sz * 0.55, -sz * 0.8, sz * 1.1, sz * 1.1); c.restore();
+        }
+        c.drawImage(wb[key], -sz * 0.5, -sz + 9, sz, sz);
+        // Явный плавающий маркер золотого ключа над запертым хранилищем (сундук за ключ!)
+        if (!opened && p.kind === 'vault' && ok('pickup_key')) {
+          const ky = -sz - 6 + Math.sin(t * 3.6 + p.seed) * 3;
+          c.save(); c.globalCompositeOperation = 'lighter'; c.globalAlpha = 0.5;
+          c.drawImage(getGfxGlow('#ffd24a'), -14, ky - 14, 28, 28); c.restore();
+          c.drawImage(wb.pickup_key, -11, ky - 11, 22, 22);
+        }
+      } else chestDraw(c, p, t, p.kind === 'mimic' ? 'chest' : p.kind);
+      break;
+    }
+    case 'shrine':
+      if (ok('shrine')) {
+        groundShadow(19, 7);
+        if (p.state === 0) {
+          c.save(); c.globalCompositeOperation = 'lighter'; c.globalAlpha = 0.35 + Math.sin(t * 4 + p.seed) * 0.14;
+          c.drawImage(getGfxGlow('#ff2e54'), -34, -53, 68, 68); c.restore();
+        }
+        c.save();
+        if (p.state > 0) c.filter = 'grayscale(0.85) brightness(0.65)';
+        c.drawImage(wb.shrine, -31, -55, 62, 62);
+        c.restore();
+      } else shrine(c, p, t);
+      break;
     case 'sarcophagus': sarcophagus(c, p); break;
-    case 'brazier': brazier(c, p, t); break;
+    case 'brazier':
+      if (ok('brazier')) {
+        groundShadow(16.5, 6);
+        c.save(); c.globalCompositeOperation = 'lighter'; c.globalAlpha = 0.38 + Math.sin(t * 9 + p.seed) * 0.1;
+        c.drawImage(getGfxGlow('#ff8a2a'), -28, -53, 56, 56); c.restore();
+        c.drawImage(wb.brazier, -26, -45, 52, 52);
+        flame(c, 0, -31, 6.5, 16 + Math.sin(t * 10 + p.seed) * 2.5, t, p.seed, '#ff7a1a', '#fff0a0');
+      } else brazier(c, p, t);
+      break;
     case 'campfire': campfire(c, p, t, false); break;
     case 'orcfire': campfire(c, p, t, true); break;
-    case 'merchant': merchant(c, p, t); break;
+    case 'merchant':
+      if (ok('merchant')) {
+        groundShadow(19, 6.5);
+        // Тёплый свет фонаря торговца
+        c.save(); c.globalCompositeOperation = 'lighter'; c.globalAlpha = 0.38 + Math.sin(t * 6) * 0.08;
+        c.drawImage(getGfxGlow('#ffb84a'), -20, -45, 64, 64); c.restore();
+        c.drawImage(wb.merchant, -33, -59, 66, 66);
+        // Вращающаяся золотая монета-маркер над головой
+        const cy = -65 + Math.sin(t * 3.2) * 2.5;
+        const cw = Math.abs(Math.cos(t * 4)) * 4.5 + 1.2;
+        c.save(); c.globalCompositeOperation = 'lighter'; c.globalAlpha = 0.55;
+        c.drawImage(getGfxGlow('#ffcf3a'), -11, cy - 11, 22, 22); c.restore();
+        c.beginPath(); c.ellipse(0, cy, cw, 4.6, 0, 0, TAU);
+        c.fillStyle = vgrad(c, cy - 4, cy + 4, '#ffe89a', '#c88a1e'); c.fill();
+        c.lineWidth = 0.9; c.strokeStyle = '#8a5a10'; c.stroke();
+      } else merchant(c, p, t);
+      break;
     case 'spikes': spikes(c, p); break;
     case 'web': web(c, p); break;
     case 'bones': bonesProp(c, p); break;
@@ -1196,31 +1565,53 @@ export function drawProp(c: C, p: Prop, t: number) {
 
 // ---------------------------------------------------------------- предметы
 export function drawPickup(c: C, k: Pickup, t: number) {
+  const wb = getWorldSprites().props;
+  const ok = (n: string) => wb[n] && wb[n].complete && wb[n].naturalWidth > 0;
   c.save();
   c.translate(k.x, k.y);
-  const bob = k.kind === 'artifact' ? Math.sin(t * 3 + k.id) * 3 : 0;
-  shadow(c, 0, 1, k.kind === 'artifact' ? 9 : 5, 2.4, 0.35);
+  const bob = k.kind === 'artifact' ? Math.sin(t * 3 + k.id) * 3 : Math.sin(t * 4.5 + k.id) * 1.8;
+  shadow(c, 0, 1.5, k.kind === 'artifact' ? 10 : k.kind === 'potion' || k.kind === 'key' ? 8 : 5.5, 2.6, 0.42);
   c.translate(0, -k.z - bob);
+  c.imageSmoothingEnabled = true;
   switch (k.kind) {
     case 'gold': {
-      const w = Math.abs(Math.cos(t * 6 + k.id)) * 4 + 0.8;
-      ell(c, 0, -5, w, 4.4, '#ffcf3a'); c.strokeStyle = '#9a6a14'; c.lineWidth = 1; c.beginPath(); c.ellipse(0, -5, w * 0.6, 3, 0, 0, TAU); c.stroke();
+      if (ok('pickup_gold')) {
+        const scX = 0.72 + Math.abs(Math.cos(t * 5 + k.id)) * 0.28;
+        c.save(); c.scale(scX, 1); c.drawImage(wb.pickup_gold, -9, -16, 18, 18); c.restore();
+      } else {
+        const w = Math.abs(Math.cos(t * 6 + k.id)) * 4 + 0.8;
+        ell(c, 0, -5, w, 4.4, '#ffcf3a');
+      }
       break;
     }
     case 'xp': {
-      c.fillStyle = 'rgba(110,190,255,0.35)'; c.beginPath(); c.arc(0, -8, 6 + Math.sin(t * 8 + k.id) * 1, 0, TAU); c.fill();
-      c.fillStyle = '#bfe6ff'; c.beginPath(); c.arc(0, -8, 2.6, 0, TAU); c.fill();
+      if (ok('pickup_xp')) {
+        c.save(); c.globalCompositeOperation = 'lighter'; c.globalAlpha = 0.35;
+        c.drawImage(getGfxGlow('#6ec0ff'), -12, -19, 24, 24); c.restore();
+        c.drawImage(wb.pickup_xp, -8.5, -16, 17, 17);
+      } else {
+        c.fillStyle = '#bfe6ff'; c.beginPath(); c.arc(0, -8, 2.6, 0, TAU); c.fill();
+      }
       break;
     }
     case 'potion': {
-      const by = Math.sin(t * 4 + k.id) * 1.5;
-      ell(c, 0, -8 + by, 6, 6.4, '#c4203a'); ell(c, -1.6, -9.6 + by, 1.8, 2.2, 'rgba(255,255,255,0.55)', false);
-      rr(c, -2.4, -18 + by, 4.8, 6, 1, '#b8dce8'); rr(c, -2.8, -20 + by, 5.6, 3, 1, '#7a5a34');
+      if (ok('pickup_potion')) {
+        c.save(); c.globalCompositeOperation = 'lighter'; c.globalAlpha = 0.32 + Math.sin(t * 5 + k.id) * 0.1;
+        c.drawImage(getGfxGlow('#ff4d6d'), -16, -24, 32, 32); c.restore();
+        c.drawImage(wb.pickup_potion, -13, -24, 26, 26);
+      } else {
+        ell(c, 0, -8, 6, 6.4, '#c4203a');
+      }
       break;
     }
     case 'key': {
-      const by = Math.sin(t * 4 + k.id) * 1.5;
-      c.strokeStyle = '#ffd24a'; c.lineWidth = 2.6; c.beginPath(); c.arc(-4, -10 + by, 3.4, 0, TAU); c.moveTo(-0.6, -10 + by); c.lineTo(8, -10 + by); c.moveTo(5, -10 + by); c.lineTo(5, -6 + by); c.moveTo(8, -10 + by); c.lineTo(8, -6.4 + by); c.stroke();
+      if (ok('pickup_key')) {
+        c.save(); c.globalCompositeOperation = 'lighter'; c.globalAlpha = 0.42 + Math.sin(t * 5 + k.id) * 0.12;
+        c.drawImage(getGfxGlow('#ffd24a'), -17, -25, 34, 34); c.restore();
+        c.drawImage(wb.pickup_key, -14, -25, 28, 28);
+      } else {
+        c.strokeStyle = '#ffd24a'; c.lineWidth = 2.6; c.beginPath(); c.arc(-4, -10, 3.4, 0, TAU); c.stroke();
+      }
       break;
     }
     case 'artifact': {
@@ -1252,9 +1643,45 @@ export function drawProj(c: C, p: Proj, t: number, w: WeaponDef) {
       c.strokeStyle = 'rgba(120,120,140,0.9)'; c.lineWidth = 0.8; for (let i = 0; i < 4; i++) { const a = i * 0.8 + t * 3; c.beginPath(); c.moveTo(Math.cos(a) * 6, Math.sin(a) * 6); c.lineTo(-Math.cos(a) * 6, -Math.sin(a) * 6); c.stroke(); }
       break;
     case 'wave': {
-      c.rotate(ang); c.strokeStyle = p.col; c.lineWidth = 5; c.lineCap = 'round';
-      c.beginPath(); c.arc(-8, 0, 16, -0.9, 0.9); c.stroke();
-      c.strokeStyle = '#fff'; c.lineWidth = 1.6; c.beginPath(); c.arc(-8, 0, 16, -0.8, 0.8); c.stroke();
+      c.rotate(ang);
+      c.globalCompositeOperation = 'lighter';
+      // 1. Внешнее пылающее багрово-золотое свечение серпа
+      const wg = c.createRadialGradient(2, 0, 2, 2, 0, 28);
+      wg.addColorStop(0, 'rgba(255,220,140,0.65)');
+      wg.addColorStop(0.5, 'rgba(255,46,96,0.55)');
+      wg.addColorStop(1, 'rgba(180,20,90,0)');
+      c.fillStyle = wg;
+      c.beginPath(); c.arc(2, 0, 28, 0, TAU); c.fill();
+
+      // 2. Широкий заострённый аниме-полумесяц клинка
+      c.fillStyle = p.col || '#ff2e63';
+      c.beginPath();
+      c.moveTo(14, 0);
+      c.quadraticCurveTo(10, -20, -12, -22);
+      c.quadraticCurveTo(2, -10, 2, 0);
+      c.quadraticCurveTo(2, 10, -12, 22);
+      c.quadraticCurveTo(10, 20, 14, 0);
+      c.closePath();
+      c.fill();
+
+      // 3. Золотисто-белое раскалённое лезвие внутри серпа
+      c.fillStyle = '#fff3cc';
+      c.beginPath();
+      c.moveTo(12, 0);
+      c.quadraticCurveTo(8, -14, -7, -16);
+      c.quadraticCurveTo(4, -7, 4, 0);
+      c.quadraticCurveTo(4, 7, -7, 16);
+      c.quadraticCurveTo(8, 14, 12, 0);
+      c.closePath();
+      c.fill();
+
+      // 4. Два тянущихся хвоста-шлейфа энергии
+      c.strokeStyle = 'rgba(255,210,120,0.75)';
+      c.lineWidth = 2.0;
+      c.lineCap = 'round';
+      c.beginPath(); c.moveTo(-4, -14); c.lineTo(-22, -17); c.stroke();
+      c.beginPath(); c.moveTo(-4, 14); c.lineTo(-22, 17); c.stroke();
+      c.globalCompositeOperation = 'source-over';
       break;
     }
     default: {
@@ -1269,16 +1696,26 @@ export function drawProj(c: C, p: Proj, t: number, w: WeaponDef) {
 
 // ---------------------------------------------------------------- прочее
 export function drawCritter(c: C, r: Critter, t: number) {
-  c.save(); c.translate(r.x, r.y); c.scale(r.face, 1);
+  const wb = getWorldSprites().props;
   const sp = Math.hypot(r.vx, r.vy) > 5 ? 1 : 0;
-  shadow(c, 0, 1, 6, 2, 0.3);
-  const w = Math.sin(t * 30 + r.t) * sp;
-  limb(c, -3, -2, -3 + w * 2, 0, 1, '#4a3c36'); limb(c, 3, -2, 3 - w * 2, 0, 1, '#4a3c36');
-  ell(c, 0, -3.4, 5.4, 3, '#5e4e46');
-  ell(c, 5, -3.4, 2.6, 1.9, '#6a5a52');
-  poly(c, [4.5, -5.2, 5.5, -7.2, 6.4, -5], '#c89a9a', false);
-  c.fillStyle = '#111'; c.fillRect(6, -4.2, 1, 1);
-  c.strokeStyle = '#c89a9a'; c.lineWidth = 1; c.beginPath(); c.moveTo(-5, -3.4); c.quadraticCurveTo(-9, -3 + Math.sin(t * 8) * 2, -11, -5); c.stroke();
+  c.save();
+  c.translate(r.x, r.y);
+  shadow(c, 0, 1.5, 9, 3.2, 0.44);
+  if (wb.rat && wb.rat.complete && wb.rat.naturalWidth > 0) {
+    const hop = sp ? Math.abs(Math.sin(t * 18 + r.t)) * 2.4 : 0;
+    const tilt = sp ? Math.sin(t * 18 + r.t) * 0.08 : Math.sin(t * 3 + r.t) * 0.02;
+    c.scale(r.face, 1);
+    c.translate(0, -hop);
+    c.rotate(tilt);
+    c.imageSmoothingEnabled = true;
+    c.drawImage(wb.rat, -13, -23, 26, 26);
+  } else {
+    c.scale(r.face, 1);
+    const w = Math.sin(t * 30 + r.t) * sp;
+    limb(c, -3, -2, -3 + w * 2, 0, 1, '#4a3c36'); limb(c, 3, -2, 3 - w * 2, 0, 1, '#4a3c36');
+    ell(c, 0, -3.4, 5.4, 3, '#5e4e46');
+    ell(c, 5, -3.4, 2.6, 1.9, '#6a5a52');
+  }
   c.restore();
 }
 
