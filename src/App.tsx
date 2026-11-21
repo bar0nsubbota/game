@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Download, Keyboard, Play, Skull } from 'lucide-react';
 import menuImg from './assets/menu.jpg';
+import menuMobileImg from './assets/menu-mobile.jpg';
 import { GameScreen } from './ui/GameScreen';
 import { HelpPanel, MetaPanel } from './ui/Panels';
 import { initAudio } from './game/audio';
@@ -91,7 +92,8 @@ export default function App() {
 
   return (
     <div className="absolute inset-0 overflow-hidden bg-black">
-      <img src={menuImg} alt="" className="absolute inset-0 h-full w-full object-cover object-[50%_28%]" draggable={false} />
+      <img src={menuImg} alt="" className="hidden md:block absolute inset-0 h-full w-full object-cover object-[50%_28%]" draggable={false} />
+      <img src={menuMobileImg} alt="" className="block md:hidden absolute inset-0 h-full w-full object-cover object-top" draggable={false} />
       <div className="absolute inset-0 bg-gradient-to-t from-black via-black/55 to-black/5 md:bg-gradient-to-r md:from-black md:via-black/60 md:to-transparent" />
       {embers.map((e, i) => (
         <span key={i} className="ember" style={{ left: e.left, width: e.size, height: e.size, animationDuration: `${e.dur}s`, animationDelay: `${e.delay}s` }} />

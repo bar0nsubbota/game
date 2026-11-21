@@ -182,9 +182,7 @@ export class Game {
     this.W = w; this.H = h;
     this.canvas.width = Math.round(w * this.dpr);
     this.canvas.height = Math.round(h * this.dpr);
-    this.zoom = mobile
-      ? Math.max(1.12, Math.min(1.48, Math.min(w, h) / 340))
-      : Math.max(0.85, Math.min(1.5, Math.min(w, h) / 560));
+    this.zoom = Math.max(0.85, Math.min(1.5, Math.min(w, h) / 560));
   };
   frame = (ts: number) => {
     const raw = Math.min(0.05, (ts - this.last) / 1000);

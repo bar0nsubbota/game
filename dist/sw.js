@@ -1,4 +1,4 @@
-const CACHE = 'noctis-pwa-v2';
+const CACHE = 'noctis-pwa-v3';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
